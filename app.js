@@ -1780,3 +1780,31 @@ function exportCSV(){
   const blob=new Blob([csv],{type:"text/csv"});
   download(blob,"card-garden.csv");
 }
+
+/* v46 filter */
+let filterState = { status:null, labels:[], mode:"OR" };
+
+function openFilter(){ document.getElementById("filterModal").style.display="flex"; }
+function closeFilter(){ document.getElementById("filterModal").style.display="none"; }
+
+function applyFilter(){
+  const status = document.getElementById("filterStatus").value || null;
+  const labels = document.getElementById("filterLabels").value.split(",").map(s=>s.trim()).filter(Boolean);
+  const mode = document.querySelector('input[name="filterMode"]:checked').value;
+
+  filterState = {status, labels, mode};
+
+  if(window.cards){
+    window.filteredCards = window.cards.filter(c=>{
+      const s = !status || c.status===status;
+      const l = labels.length===0 || (
+        mode==="OR" ? labels.some(x=>c.labels.includes(x))
+                    : labels.every(x=>c.labels.includes(x))
+      );
+      return s && l;
+    });
+  }
+
+  closeFilter();
+  if(typeof renderCards==="function") renderCards();
+}

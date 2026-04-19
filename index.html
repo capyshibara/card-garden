@@ -82,5 +82,27 @@ if (typeof firebase !== "undefined" && firebase.auth) {
   Card Garden v45<br/>@capyshibara
 </div>
 
+
+<div id="filterModal" class="filter-modal">
+  <div class="filter-box">
+    <h3>Filter</h3>
+    <label>Status</label>
+    <input id="filterStatus" placeholder="Learning"/>
+
+    <label>Labels (comma)</label>
+    <input id="filterLabels" placeholder="analysis, brainstorming"/>
+
+    <div>
+      <label><input type="radio" name="filterMode" value="OR" checked> OR</label>
+      <label><input type="radio" name="filterMode" value="AND"> AND</label>
+    </div>
+
+    <div class="filter-actions">
+      <button onclick="closeFilter()">Cancel</button>
+      <button onclick="applyFilter()">Apply</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

@@ -1406,3 +1406,18 @@ h2 { font-size: calc(var(--fs-title) * 0.68); line-height: 0.98; font-weight: 70
 .card-content { word-break: normal; }
 .metrics-export { display:flex; justify-content:center; gap:12px; margin-top:20px; }
 .version-box { margin-top:40px; text-align:center; font-size:12px; opacity:0.6; line-height:1.6; }
+
+/* v46 filter modal */
+.filter-modal {
+  position: fixed; inset:0;
+  background: rgba(0,0,0,0.3);
+  display:none; align-items:center; justify-content:center;
+  z-index:1000;
+}
+.filter-box {
+  background:#EBDBBC;
+  padding:16px; border-radius:12px;
+  width:85%; max-width:320px;
+}
+.filter-box h3 { margin-bottom:10px; }
+.filter-actions { display:flex; justify-content:space-between; margin-top:12px; }
