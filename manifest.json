@@ -1,0 +1,8 @@
+{
+  "name": "Card Garden",
+  "short_name": "Card Garden",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#FAFAF7",
+  "theme_color": "#191919"
+}

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#CC785C" />
+  <title>Card Garden</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Cormorant+Garamond:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow" id="headerEyebrow">A calm study space</p>
+        <h1 id="headerTitle">Learn</h1>
+      </div>
+      <div class="topbar-actions" id="topbarActions"></div>
+      <button class="icon-button" id="backButton" aria-label="Back" hidden>←</button>
+    </header>
+
+    <main id="app"></main>
+
+    <nav class="bottom-nav">
+      <button class="nav-item" data-tab="home">Learn</button>
+      <button class="nav-item" data-tab="cards">Cards</button>
+      <button class="nav-item" data-tab="metrics">Metrics</button>
+    </nav>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
