@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-auth.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut, browserLocalPersistence, setPersistence } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-auth.js";
 import { getFirestore, collection, doc, getDocs, setDoc, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
 import { marked } from "https://cdn.jsdelivr.net/npm/marked/lib/marked.esm.js";
 
@@ -32,6 +32,8 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "69133538887",
   appId: "1:69133538887:web:865e372186a94d268c0362"
 };
+
+const AUTH_REDIRECT_KEY = "cg-v42-auth-redirect";
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -403,6 +405,33 @@ function isMobileSafariLike() {
   return /iPhone|iPad|iPod|Android/i.test(ua);
 }
 
+
+function isRedirectPending() {
+  try { return sessionStorage.getItem(AUTH_REDIRECT_KEY) === "1"; } catch { return false; }
+}
+
+function setRedirectPending(value) {
+  try {
+    if (value) sessionStorage.setItem(AUTH_REDIRECT_KEY, "1");
+    else sessionStorage.removeItem(AUTH_REDIRECT_KEY);
+  } catch {}
+}
+
+function showLoading(message = "Signing you in…", detail = "Returning to your private card garden.") {
+  const overlay = document.getElementById("loadingOverlay");
+  if (!overlay) return;
+  const title = overlay.querySelector(".loading-title");
+  const subtitle = overlay.querySelector(".loading-subtitle");
+  if (title) title.textContent = message;
+  if (subtitle) subtitle.textContent = detail;
+  overlay.hidden = false;
+}
+
+function hideLoading() {
+  const overlay = document.getElementById("loadingOverlay");
+  if (overlay) overlay.hidden = true;
+}
+
 function cardsCollectionRef(userId) {
   return collection(firestoreDb, "users", userId, "cards");
 }
@@ -496,6 +525,7 @@ const titleEl = document.getElementById("headerTitle");
 const eyebrowEl = document.getElementById("headerEyebrow");
 const backButton = document.getElementById("backButton");
 const toastEl = document.getElementById("toast");
+const loadingOverlayEl = document.getElementById("loadingOverlay");
 const navItems = [...document.querySelectorAll(".nav-item")];
 const topbarActions = document.getElementById("topbarActions");
 
@@ -915,17 +945,27 @@ async function signInWithGoogle() {
     ensureFirebase();
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: "select_account" });
+
     if (isMobileSafariLike()) {
+      setRedirectPending(true);
+      showLoading();
+      render();
       await signInWithRedirect(firebaseAuth, provider);
       return;
     }
+
     await signInWithPopup(firebaseAuth, provider);
   } catch (error) {
     console.error(error);
     if (error?.code === "auth/popup-blocked" || error?.code === "auth/cancelled-popup-request") {
+      setRedirectPending(true);
+      showLoading();
+      render();
       await signInWithRedirect(firebaseAuth, new GoogleAuthProvider());
       return;
     }
+    setRedirectPending(false);
+    hideLoading();
     showToast("Google sign-in failed");
   }
 }
@@ -1205,11 +1245,13 @@ function render() {
 }
 
 function renderAuthLoading() {
+  const title = isRedirectPending() ? "Signing you in…" : "Loading your library…";
+  const detail = isRedirectPending() ? "Finishing Google sign-in on this device." : "Checking your sign-in state.";
   appEl.innerHTML = `
     <section class="panel empty-panel fade-in">
       <div class="empty-box">
-        <h2>Loading your library…</h2>
-        <div class="muted">Checking your sign-in state.</div>
+        <h2>${title}</h2>
+        <div class="muted">${detail}</div>
       </div>
     </section>
   `;
@@ -1726,6 +1768,32 @@ function applyStampFaces() {
   faces.forEach((face) => stampFaceObserver.observe(face));
 }
 
+
+let authSyncCounter = 0;
+
+async function applyAuthState(user) {
+  const syncId = ++authSyncCounter;
+  state.user = user;
+  authReady = true;
+  state.route = "root";
+  state.selectedId = null;
+  clearCardSelection();
+  state.dismissedIds.clear();
+  state.flippedIds.clear();
+
+  if (user) {
+    await startCloud(user);
+  } else {
+    await stopCloud();
+    state.cards = loadCards();
+  }
+
+  if (syncId !== authSyncCounter) return;
+  setRedirectPending(false);
+  hideLoading();
+  render();
+}
+
 function showToast(text) {
   toastEl.textContent = text;
   toastEl.classList.add("show");
@@ -1736,23 +1804,32 @@ function showToast(text) {
 window.formatEditor = formatEditor;
 
 ensureFirebase();
-getRedirectResult(firebaseAuth).catch(error => {
-  console.error(error);
-});
 
-onAuthStateChanged(firebaseAuth, async (user) => {
-  state.user = user;
-  authReady = true;
-  state.route = "root";
-  state.selectedId = null;
-  clearCardSelection();
-  if (user) {
-    await startCloud(user);
-  } else {
-    await stopCloud();
-    state.cards = loadCards();
+(async function bootstrapAuth() {
+  try {
+    await setPersistence(firebaseAuth, browserLocalPersistence);
+  } catch (error) {
+    console.warn("Persistence setup skipped", error);
   }
-  render();
-});
 
-render();
+  if (isRedirectPending()) {
+    showLoading();
+  }
+
+  onAuthStateChanged(firebaseAuth, async (user) => {
+    await applyAuthState(user);
+  });
+
+  try {
+    const result = await getRedirectResult(firebaseAuth);
+    if (result?.user && (!state.user || state.user.uid !== result.user.uid)) {
+      await applyAuthState(result.user);
+    }
+  } catch (error) {
+    console.error(error);
+    setRedirectPending(false);
+    hideLoading();
+  }
+
+  render();
+})();

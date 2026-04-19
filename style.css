@@ -1401,3 +1401,51 @@ h2 { font-size: calc(var(--fs-title) * 0.68); line-height: 0.98; font-weight: 70
 .auth-panel .empty-box {
   max-width: 420px;
 }
+
+
+/* v42 auth + nav fixes */
+.bottom-nav {
+  background: rgba(235, 219, 188, 0.98) !important;
+  border-color: rgba(25,25,25,0.08) !important;
+}
+.nav-item {
+  color: var(--slate-dark) !important;
+}
+.nav-item.active {
+  background: rgba(204, 120, 92, 0.96) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(25,25,25,0.08);
+}
+
+.loading-overlay[hidden] { display: none !important; }
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  background: rgba(250, 250, 247, 0.82);
+  backdrop-filter: blur(10px);
+  padding: 24px;
+}
+.loading-card {
+  width: min(92vw, 420px);
+  border-radius: 28px;
+  background: #fffdf9;
+  border: 1px solid rgba(25,25,25,0.08);
+  box-shadow: 0 20px 40px rgba(25,25,25,0.12);
+  padding: 28px 24px;
+  text-align: center;
+}
+.loading-title {
+  font-family: "Cormorant Garamond", serif;
+  font-size: clamp(34px, 6vw, 48px);
+  line-height: 0.95;
+  color: var(--slate-dark);
+}
+.loading-subtitle {
+  margin-top: 10px;
+  color: var(--ink-soft);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+}
