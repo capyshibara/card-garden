@@ -1402,23 +1402,7 @@ h2 { font-size: calc(var(--fs-title) * 0.68); line-height: 0.98; font-weight: 70
   max-width: 420px;
 }
 
-/* v44 improvements */
-.card-footer {
-  display:flex;
-  flex-wrap:wrap;
-  align-items:center;
-  gap:8px;
-}
-.labels { display:flex; flex-wrap:wrap; gap:6px; }
-.card-status { margin-left:auto; white-space:nowrap; }
-
-.card-title { font-size:18px; font-weight:600; }
-.card-content { font-size:14px; opacity:0.8; }
-
-.version-box {
-  margin-top:32px;
-  text-align:center;
-  font-size:12px;
-  opacity:0.6;
-  line-height:1.6;
-}
+/* v45 fixes */
+.card-content { word-break: normal; }
+.metrics-export { display:flex; justify-content:center; gap:12px; margin-top:20px; }
+.version-box { margin-top:40px; text-align:center; font-size:12px; opacity:0.6; line-height:1.6; }

@@ -27,7 +27,7 @@
     <nav class="bottom-nav">
       <button class="nav-item" data-tab="home">Learn</button>
       <button class="nav-item" data-tab="cards">Cards</button>
-      <button class="nav-item" data-tab="metrics">Metrics</button>
+      <button class="nav-item" data-tab="metrics">Stats</button>
     </nav>
   </div>
 
@@ -73,14 +73,13 @@ if (typeof firebase !== "undefined" && firebase.auth) {
 </script>
 
 
-<div style="padding:16px;">
-  <button onclick="exportJSON(window.cards||[])">Export JSON</button>
-  <button onclick="exportCSV(window.cards||[])">Export CSV</button>
+<div class="metrics-export">
+  <button onclick="exportJSON()">Export JSON</button>
+  <button onclick="exportCSV()">Export CSV</button>
 </div>
 
 <div class="version-box">
-  Card Garden v44<br/>
-  @capyshibara
+  Card Garden v45<br/>@capyshibara
 </div>
 
 </body>

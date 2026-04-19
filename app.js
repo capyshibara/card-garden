@@ -1757,36 +1757,26 @@ onAuthStateChanged(firebaseAuth, async (user) => {
 
 render();
 
-/* v44 export */
-function exportJSON(cards){
-  const blob = new Blob([JSON.stringify(cards,null,2)],{type:"application/json"});
+/* v45 export fix */
+function download(blob, filename){
   const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);
-  a.download="card-garden.json";
+  a.download=filename;
   a.click();
 }
 
-function exportCSV(cards){
-  const rows = cards.map(c=>[
-    c.front||"", c.back||"", (c.labels||[]).join("|"), c.status||""
-  ]);
-  let csv = "front,back,labels,status\n";
-  rows.forEach(r=>{csv+=r.map(v=>`"${v.replace(/"/g,'""')}"`).join(",")+"\n";});
-  const blob = new Blob([csv],{type:"text/csv"});
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);
-  a.download="card-garden.csv";
-  a.click();
+function exportJSON(){
+  const data = window.cards || [];
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+  download(blob,"card-garden.json");
 }
 
-/* v44 filter */
-function filterCards(cards, status, labels, mode){
-  return cards.filter(c=>{
-    const s = !status || c.status===status;
-    const l = labels.length===0 || (
-      mode==="OR" ? labels.some(x=>c.labels.includes(x))
-                  : labels.every(x=>c.labels.includes(x))
-    );
-    return s && l;
+function exportCSV(){
+  const data = window.cards || [];
+  let csv="front,back,labels,status\n";
+  data.forEach(c=>{
+    csv+=`"${c.front||""}","${c.back||""}","${(c.labels||[]).join("|")}","${c.status||""}"\n`;
   });
+  const blob=new Blob([csv],{type:"text/csv"});
+  download(blob,"card-garden.csv");
 }
