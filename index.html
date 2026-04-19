@@ -31,77 +31,53 @@
     </nav>
   </div>
 
+
+  <div id="loadingOverlay" hidden>
+    <div class="loading-card">
+      <h3>Card Garden</h3>
+      <p id="loadingText">Signing you in…</p>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
   <script type="module" src="app.js"></script>
 
-<div id="loadingOverlay" style="
-  position: fixed;
-  top:0; left:0; right:0; bottom:0;
-  background:#EBDBBC;
-  display:none;
-  align-items:center;
-  justify-content:center;
-  z-index:9999;
-  font-size:18px;
-">
-  Signing you in...
-</div>
-
-
-<script>
-function showLoading() {
-  var el = document.getElementById("loadingOverlay");
-  if (el) el.style.display = "flex";
-}
-function hideLoading() {
-  var el = document.getElementById("loadingOverlay");
-  if (el) el.style.display = "none";
-}
-
-if (typeof firebase !== "undefined" && firebase.auth) {
-  firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL);
-
-  firebase.auth().getRedirectResult()
-    .then(function(result) {
-      hideLoading();
-    })
-    .catch(function(error) {
-      console.error(error);
-      hideLoading();
-    });
-}
-</script>
-
-
-<div class="metrics-export">
-  <button onclick="exportJSON()">Export JSON</button>
-  <button onclick="exportCSV()">Export CSV</button>
-</div>
-
-<div class="version-box">
-  Card Garden v45<br/>@capyshibara
-</div>
-
-
-<div id="filterModal" class="filter-modal">
+<div id="filterModal" class="filter-modal" aria-hidden="true">
   <div class="filter-box">
-    <h3>Filter</h3>
-    <label>Status</label>
-    <input id="filterStatus" placeholder="Learning"/>
-
-    <label>Labels (comma)</label>
-    <input id="filterLabels" placeholder="analysis, brainstorming"/>
-
-    <div>
-      <label><input type="radio" name="filterMode" value="OR" checked> OR</label>
-      <label><input type="radio" name="filterMode" value="AND"> AND</label>
+    <h3>Filter cards</h3>
+    <div class="filter-grid">
+      <label>
+        <span>Status</span>
+        <input id="filterStatus" type="text" placeholder="Learning" />
+      </label>
+      <label>
+        <span>Labels (comma-separated)</span>
+        <input id="filterLabels" type="text" placeholder="analysis, brainstorming" />
+      </label>
+      <div class="filter-mode">
+        <strong>Mode</strong>
+        <label><input type="radio" name="filterMode" value="OR" checked /> OR</label>
+        <label><input type="radio" name="filterMode" value="AND" /> AND</label>
+      </div>
     </div>
-
     <div class="filter-actions">
-      <button onclick="closeFilter()">Cancel</button>
-      <button onclick="applyFilter()">Apply</button>
+      <button onclick="clearFilterState()">Clear</button>
+      <button onclick="closeFilterModal()">Cancel</button>
+      <button onclick="applyCardFilters()">Apply</button>
     </div>
   </div>
+</div>
+
+
+<div id="statsTools" class="metrics-tools">
+  <div class="version-box">
+    Card Garden v47<br/>@capyshibara
+  </div>
+  <div class="metrics-export">
+    <button onclick="exportCardsAsJson()">Export JSON</button>
+    <button onclick="exportCardsAsCsv()">Export CSV</button>
+  </div>
+  <div id="filterSummary" class="filter-summary">No filters applied</div>
 </div>
 
 </body>

@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-auth.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-auth.js";
 import { getFirestore, collection, doc, getDocs, setDoc, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
 import { marked } from "https://cdn.jsdelivr.net/npm/marked/lib/marked.esm.js";
 
@@ -32,6 +32,9 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "69133538887",
   appId: "1:69133538887:web:865e372186a94d268c0362"
 };
+
+const APP_VERSION = "Card Garden v43 @capyshibara";
+const AUTH_REDIRECT_FLAG = "cg-auth-redirect-pending";
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -398,7 +401,21 @@ function ensureFirebase() {
   firestoreDb = getFirestore(firebaseApp);
 }
 
-function isMobileSafariLike() {
+async function configureAuthPersistence() {
+  ensureFirebase();
+  try {
+    await setPersistence(firebaseAuth, browserLocalPersistence);
+  } catch (error) {
+    console.warn("Could not set auth persistence", error);
+  }
+}
+
+function isMobileDevice() {
+  const ua = navigator.userAgent || "";
+  return /iPhone|iPad|iPod|Android/i.test(ua);
+}
+
+function isLegacyMobileRedirectPreferred() {
   const ua = navigator.userAgent || "";
   return /iPhone|iPad|iPod|Android/i.test(ua);
 }
@@ -913,19 +930,35 @@ function resetForm() {
 async function signInWithGoogle() {
   try {
     ensureFirebase();
+    await configureAuthPersistence();
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: "select_account" });
-    if (isMobileSafariLike()) {
+    setLoadingVisible(true, "Opening Google sign-in…");
+
+    try {
+      await signInWithPopup(firebaseAuth, provider);
+      sessionStorage.removeItem(AUTH_REDIRECT_FLAG);
+      setLoadingVisible(false);
+      return;
+    } catch (popupError) {
+      const popupFallbackCodes = new Set([
+        "auth/popup-blocked",
+        "auth/cancelled-popup-request",
+        "auth/popup-closed-by-user",
+        "auth/operation-not-supported-in-this-environment"
+      ]);
+      if (!popupFallbackCodes.has(popupError?.code) && !isMobileDevice()) {
+        throw popupError;
+      }
+      sessionStorage.setItem(AUTH_REDIRECT_FLAG, "1");
+      setLoadingVisible(true, "Redirecting to Google…");
       await signInWithRedirect(firebaseAuth, provider);
       return;
     }
-    await signInWithPopup(firebaseAuth, provider);
   } catch (error) {
     console.error(error);
-    if (error?.code === "auth/popup-blocked" || error?.code === "auth/cancelled-popup-request") {
-      await signInWithRedirect(firebaseAuth, new GoogleAuthProvider());
-      return;
-    }
+    sessionStorage.removeItem(AUTH_REDIRECT_FLAG);
+    setLoadingVisible(false);
     showToast("Google sign-in failed");
   }
 }
@@ -1568,6 +1601,7 @@ function renderMetrics() {
           <div class="metric-value metric-user">${escapeHtml(state.user?.displayName || state.user?.email || "Google user")}</div>
         </div>
       </div>
+      <div class="version-note">${APP_VERSION}</div>
     </section>
   `;
 }
@@ -1726,6 +1760,14 @@ function applyStampFaces() {
   faces.forEach((face) => stampFaceObserver.observe(face));
 }
 
+
+function setLoadingVisible(visible, message = "Signing you in…") {
+  const overlay = document.getElementById("loadingOverlay");
+  const text = document.getElementById("loadingText");
+  if (text) text.textContent = message;
+  if (overlay) overlay.hidden = !visible;
+}
+
 function showToast(text) {
   toastEl.textContent = text;
   toastEl.classList.add("show");
@@ -1735,76 +1777,199 @@ function showToast(text) {
 
 window.formatEditor = formatEditor;
 
-ensureFirebase();
-getRedirectResult(firebaseAuth).catch(error => {
-  console.error(error);
-});
+async function initAuth() {
+  ensureFirebase();
+  await configureAuthPersistence();
 
-onAuthStateChanged(firebaseAuth, async (user) => {
-  state.user = user;
-  authReady = true;
-  state.route = "root";
-  state.selectedId = null;
-  clearCardSelection();
-  if (user) {
-    await startCloud(user);
-  } else {
-    await stopCloud();
-    state.cards = loadCards();
+  if (sessionStorage.getItem(AUTH_REDIRECT_FLAG)) {
+    setLoadingVisible(true, "Signing you in…");
   }
-  render();
-});
 
-render();
+  try {
+    await getRedirectResult(firebaseAuth);
+  } catch (error) {
+    console.error(error);
+  }
 
-/* v45 export fix */
-function download(blob, filename){
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);
-  a.download=filename;
-  a.click();
-}
+  onAuthStateChanged(firebaseAuth, async (user) => {
+    state.user = user;
+    authReady = true;
+    state.route = "root";
+    state.selectedId = null;
+    clearCardSelection();
 
-function exportJSON(){
-  const data = window.cards || [];
-  const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
-  download(blob,"card-garden.json");
-}
-
-function exportCSV(){
-  const data = window.cards || [];
-  let csv="front,back,labels,status\n";
-  data.forEach(c=>{
-    csv+=`"${c.front||""}","${c.back||""}","${(c.labels||[]).join("|")}","${c.status||""}"\n`;
+    if (user) {
+      sessionStorage.removeItem(AUTH_REDIRECT_FLAG);
+      setLoadingVisible(true, "Loading your cards…");
+      await startCloud(user);
+      setLoadingVisible(false);
+    } else {
+      await stopCloud();
+      state.cards = loadCards();
+      if (!sessionStorage.getItem(AUTH_REDIRECT_FLAG)) {
+        setLoadingVisible(false);
+      }
+    }
+    render();
   });
-  const blob=new Blob([csv],{type:"text/csv"});
-  download(blob,"card-garden.csv");
+
+  render();
 }
 
-/* v46 filter */
-let filterState = { status:null, labels:[], mode:"OR" };
+initAuth();
 
-function openFilter(){ document.getElementById("filterModal").style.display="flex"; }
-function closeFilter(){ document.getElementById("filterModal").style.display="none"; }
 
-function applyFilter(){
-  const status = document.getElementById("filterStatus").value || null;
-  const labels = document.getElementById("filterLabels").value.split(",").map(s=>s.trim()).filter(Boolean);
-  const mode = document.querySelector('input[name="filterMode"]:checked').value;
+/* v47 scoped export + filter */
+window.filterState = window.filterState || { status: "", labels: [], mode: "OR" };
 
-  filterState = {status, labels, mode};
+function getAllCardsForExport() {
+  if (Array.isArray(window.cards)) return window.cards;
+  if (Array.isArray(window.allCards)) return window.allCards;
+  if (Array.isArray(window.state?.cards)) return window.state.cards;
+  return [];
+}
 
-  if(window.cards){
-    window.filteredCards = window.cards.filter(c=>{
-      const s = !status || c.status===status;
-      const l = labels.length===0 || (
-        mode==="OR" ? labels.some(x=>c.labels.includes(x))
-                    : labels.every(x=>c.labels.includes(x))
-      );
-      return s && l;
-    });
+function triggerDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+    a.remove();
+  }, 300);
+}
+
+function exportCardsAsJson() {
+  const cards = getAllCardsForExport();
+  const blob = new Blob([JSON.stringify(cards, null, 2)], { type: "application/json" });
+  triggerDownload(blob, "card-garden.json");
+}
+
+function escapeCsvCell(value) {
+  const safe = String(value ?? "").replace(/"/g, '""');
+  return `"${safe}"`;
+}
+
+function exportCardsAsCsv() {
+  const cards = getAllCardsForExport();
+  const header = ["front", "back", "labels", "status"];
+  const rows = cards.map(card => [
+    card.front || "",
+    card.back || "",
+    Array.isArray(card.labels) ? card.labels.join("|") : "",
+    card.status || ""
+  ]);
+  const csv = [header, ...rows].map(row => row.map(escapeCsvCell).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  triggerDownload(blob, "card-garden.csv");
+}
+
+function openFilterModal() {
+  const modal = document.getElementById("filterModal");
+  if (!modal) return;
+  const statusEl = document.getElementById("filterStatus");
+  const labelsEl = document.getElementById("filterLabels");
+  const modeEls = document.querySelectorAll('input[name="filterMode"]');
+  if (statusEl) statusEl.value = window.filterState.status || "";
+  if (labelsEl) labelsEl.value = (window.filterState.labels || []).join(", ");
+  modeEls.forEach(el => { el.checked = el.value === (window.filterState.mode || "OR"); });
+  modal.classList.add("is-open");
+}
+
+function closeFilterModal() {
+  document.getElementById("filterModal")?.classList.remove("is-open");
+}
+
+function clearFilterState() {
+  window.filterState = { status: "", labels: [], mode: "OR" };
+  const statusEl = document.getElementById("filterStatus");
+  const labelsEl = document.getElementById("filterLabels");
+  const orEl = document.querySelector('input[name="filterMode"][value="OR"]');
+  if (statusEl) statusEl.value = "";
+  if (labelsEl) labelsEl.value = "";
+  if (orEl) orEl.checked = true;
+  applyCardFilters();
+}
+
+function cardMatchesFilter(card, filter) {
+  const statusOk = !filter.status || (card.status || "") === filter.status;
+  const cardLabels = Array.isArray(card.labels) ? card.labels : [];
+  if (!filter.labels.length) return statusOk;
+  const labelsOk = filter.mode === "AND"
+    ? filter.labels.every(label => cardLabels.includes(label))
+    : filter.labels.some(label => cardLabels.includes(label));
+  return statusOk && labelsOk;
+}
+
+function applyCardFilters() {
+  const status = document.getElementById("filterStatus")?.value?.trim() || "";
+  const labels = (document.getElementById("filterLabels")?.value || "")
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean);
+  const mode = document.querySelector('input[name="filterMode"]:checked')?.value || "OR";
+
+  window.filterState = { status, labels, mode };
+
+  const sourceCards = getAllCardsForExport();
+  window.filteredCards = sourceCards.filter(card => cardMatchesFilter(card, window.filterState));
+
+  const summary = document.getElementById("filterSummary");
+  if (summary) {
+    const parts = [];
+    if (status) parts.push(`Status: ${status}`);
+    if (labels.length) parts.push(`Labels (${mode}): ${labels.join(", ")}`);
+    summary.textContent = parts.length ? parts.join(" • ") : "No filters applied";
   }
 
-  closeFilter();
-  if(typeof renderCards==="function") renderCards();
+  closeFilterModal();
+
+  if (typeof renderCards === "function") {
+    renderCards();
+  } else if (typeof render === "function") {
+    render();
+  }
 }
+
+
+/* v47 tab scoping */
+function scopeStatsToolsToVisibleTab() {
+  const tools = document.getElementById("statsTools");
+  if (!tools) return;
+
+  const statsCandidates = [
+    document.getElementById("stats"),
+    document.getElementById("metrics"),
+    document.querySelector('[data-tab="stats"]'),
+    document.querySelector('[data-tab="metrics"]'),
+    document.querySelector('.stats-tab'),
+    document.querySelector('.metrics-tab')
+  ].filter(Boolean);
+
+  let target = null;
+  for (const el of statsCandidates) {
+    const style = window.getComputedStyle(el);
+    if (style.display !== "none" && style.visibility !== "hidden") {
+      target = el;
+      break;
+    }
+  }
+
+  if (target && !target.contains(tools)) {
+    target.appendChild(tools);
+  }
+
+  if (!target) {
+    tools.style.display = "none";
+  } else {
+    tools.style.display = "flex";
+  }
+}
+
+setTimeout(scopeStatsToolsToVisibleTab, 0);
+document.addEventListener("click", function() {
+  setTimeout(scopeStatsToolsToVisibleTab, 0);
+});
