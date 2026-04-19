@@ -1449,3 +1449,19 @@ h2 { font-size: calc(var(--fs-title) * 0.68); line-height: 0.98; font-weight: 70
   background: #CC785C;
   color: #fff;
 }
+
+
+/* v48 scoped stats */
+.version-box {
+  text-align: center;
+  margin-top: 28px;
+  line-height: 1.6;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.export-box {
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
+}

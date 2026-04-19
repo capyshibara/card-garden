@@ -1817,3 +1817,29 @@ async function initAuth() {
 }
 
 initAuth();
+
+
+// v48 export JSON (safe)
+function getCardsForExport() {
+  if (Array.isArray(window.cards)) return window.cards;
+  if (Array.isArray(window.allCards)) return window.allCards;
+  if (Array.isArray(window.state?.cards)) return window.state.cards;
+  console.warn("No cards source found");
+  return [];
+}
+
+function exportJSON() {
+  const data = getCardsForExport();
+  if (!data.length) {
+    alert("No cards to export");
+    return;
+  }
+  const blob = new Blob(
+    [JSON.stringify(data, null, 2)],
+    { type: "application/json" }
+  );
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "card-garden.json";
+  a.click();
+}
