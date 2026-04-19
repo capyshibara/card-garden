@@ -157,9 +157,6 @@ h2 { font-size: calc(var(--fs-title) * 0.68); line-height: 0.98; font-weight: 70
   background: var(--manilla);
   color: var(--slate-dark);
   border: 1px solid var(--kraft);
-
-  background: #CC785C;
-  color: #fff;
 }
 
 #app { display: grid; gap: 14px; }
@@ -571,8 +568,6 @@ h2 { font-size: calc(var(--fs-title) * 0.68); line-height: 0.98; font-weight: 70
   grid-template-columns: repeat(3,1fr);
   padding: 6px;
   box-shadow: 0 16px 28px rgba(82,56,40,.10);
-
-  background: #EBDBBC;
 }
 
 .toast {
@@ -1407,45 +1402,23 @@ h2 { font-size: calc(var(--fs-title) * 0.68); line-height: 0.98; font-weight: 70
   max-width: 420px;
 }
 
+/* v44 improvements */
+.card-footer {
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:8px;
+}
+.labels { display:flex; flex-wrap:wrap; gap:6px; }
+.card-status { margin-left:auto; white-space:nowrap; }
 
-/* v43 auth + version */
-#loadingOverlay[hidden] { display: none !important; }
-#loadingOverlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(244, 241, 234, 0.96);
-  backdrop-filter: blur(4px);
-  display: grid;
-  place-items: center;
-  z-index: 9999;
-  padding: 24px;
-}
-.loading-card {
-  width: min(92vw, 360px);
-  background: #fffdf9;
-  border: 1px solid var(--line);
-  border-radius: 24px;
-  box-shadow: var(--shadow);
-  padding: 24px 20px;
-  text-align: center;
-}
-.loading-card h3 {
-  font-size: calc(var(--fs-title) * 0.5);
-  margin-bottom: 8px;
-}
-.loading-card p {
-  color: var(--ink-soft);
-}
-.version-note {
-  margin-top: 18px;
-  text-align: center;
-  color: var(--ink-soft);
-  font-size: 12px;
-}
-.bottom-nav {
-  background: #EBDBBC;
-}
-.nav-item.active {
-  background: #CC785C;
-  color: #fff;
+.card-title { font-size:18px; font-weight:600; }
+.card-content { font-size:14px; opacity:0.8; }
+
+.version-box {
+  margin-top:32px;
+  text-align:center;
+  font-size:12px;
+  opacity:0.6;
+  line-height:1.6;
 }

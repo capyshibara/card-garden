@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-auth.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-auth.js";
 import { getFirestore, collection, doc, getDocs, setDoc, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
 import { marked } from "https://cdn.jsdelivr.net/npm/marked/lib/marked.esm.js";
 
@@ -32,9 +32,6 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "69133538887",
   appId: "1:69133538887:web:865e372186a94d268c0362"
 };
-
-const APP_VERSION = "Card Garden v43 @capyshibara";
-const AUTH_REDIRECT_FLAG = "cg-auth-redirect-pending";
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -401,21 +398,7 @@ function ensureFirebase() {
   firestoreDb = getFirestore(firebaseApp);
 }
 
-async function configureAuthPersistence() {
-  ensureFirebase();
-  try {
-    await setPersistence(firebaseAuth, browserLocalPersistence);
-  } catch (error) {
-    console.warn("Could not set auth persistence", error);
-  }
-}
-
-function isMobileDevice() {
-  const ua = navigator.userAgent || "";
-  return /iPhone|iPad|iPod|Android/i.test(ua);
-}
-
-function isLegacyMobileRedirectPreferred() {
+function isMobileSafariLike() {
   const ua = navigator.userAgent || "";
   return /iPhone|iPad|iPod|Android/i.test(ua);
 }
@@ -930,35 +913,19 @@ function resetForm() {
 async function signInWithGoogle() {
   try {
     ensureFirebase();
-    await configureAuthPersistence();
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: "select_account" });
-    setLoadingVisible(true, "Opening Google sign-in…");
-
-    try {
-      await signInWithPopup(firebaseAuth, provider);
-      sessionStorage.removeItem(AUTH_REDIRECT_FLAG);
-      setLoadingVisible(false);
-      return;
-    } catch (popupError) {
-      const popupFallbackCodes = new Set([
-        "auth/popup-blocked",
-        "auth/cancelled-popup-request",
-        "auth/popup-closed-by-user",
-        "auth/operation-not-supported-in-this-environment"
-      ]);
-      if (!popupFallbackCodes.has(popupError?.code) && !isMobileDevice()) {
-        throw popupError;
-      }
-      sessionStorage.setItem(AUTH_REDIRECT_FLAG, "1");
-      setLoadingVisible(true, "Redirecting to Google…");
+    if (isMobileSafariLike()) {
       await signInWithRedirect(firebaseAuth, provider);
       return;
     }
+    await signInWithPopup(firebaseAuth, provider);
   } catch (error) {
     console.error(error);
-    sessionStorage.removeItem(AUTH_REDIRECT_FLAG);
-    setLoadingVisible(false);
+    if (error?.code === "auth/popup-blocked" || error?.code === "auth/cancelled-popup-request") {
+      await signInWithRedirect(firebaseAuth, new GoogleAuthProvider());
+      return;
+    }
     showToast("Google sign-in failed");
   }
 }
@@ -1601,7 +1568,6 @@ function renderMetrics() {
           <div class="metric-value metric-user">${escapeHtml(state.user?.displayName || state.user?.email || "Google user")}</div>
         </div>
       </div>
-      <div class="version-note">${APP_VERSION}</div>
     </section>
   `;
 }
@@ -1760,14 +1726,6 @@ function applyStampFaces() {
   faces.forEach((face) => stampFaceObserver.observe(face));
 }
 
-
-function setLoadingVisible(visible, message = "Signing you in…") {
-  const overlay = document.getElementById("loadingOverlay");
-  const text = document.getElementById("loadingText");
-  if (text) text.textContent = message;
-  if (overlay) overlay.hidden = !visible;
-}
-
 function showToast(text) {
   toastEl.textContent = text;
   toastEl.classList.add("show");
@@ -1777,43 +1735,58 @@ function showToast(text) {
 
 window.formatEditor = formatEditor;
 
-async function initAuth() {
-  ensureFirebase();
-  await configureAuthPersistence();
+ensureFirebase();
+getRedirectResult(firebaseAuth).catch(error => {
+  console.error(error);
+});
 
-  if (sessionStorage.getItem(AUTH_REDIRECT_FLAG)) {
-    setLoadingVisible(true, "Signing you in…");
+onAuthStateChanged(firebaseAuth, async (user) => {
+  state.user = user;
+  authReady = true;
+  state.route = "root";
+  state.selectedId = null;
+  clearCardSelection();
+  if (user) {
+    await startCloud(user);
+  } else {
+    await stopCloud();
+    state.cards = loadCards();
   }
-
-  try {
-    await getRedirectResult(firebaseAuth);
-  } catch (error) {
-    console.error(error);
-  }
-
-  onAuthStateChanged(firebaseAuth, async (user) => {
-    state.user = user;
-    authReady = true;
-    state.route = "root";
-    state.selectedId = null;
-    clearCardSelection();
-
-    if (user) {
-      sessionStorage.removeItem(AUTH_REDIRECT_FLAG);
-      setLoadingVisible(true, "Loading your cards…");
-      await startCloud(user);
-      setLoadingVisible(false);
-    } else {
-      await stopCloud();
-      state.cards = loadCards();
-      if (!sessionStorage.getItem(AUTH_REDIRECT_FLAG)) {
-        setLoadingVisible(false);
-      }
-    }
-    render();
-  });
-
   render();
+});
+
+render();
+
+/* v44 export */
+function exportJSON(cards){
+  const blob = new Blob([JSON.stringify(cards,null,2)],{type:"application/json"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="card-garden.json";
+  a.click();
 }
 
-initAuth();
+function exportCSV(cards){
+  const rows = cards.map(c=>[
+    c.front||"", c.back||"", (c.labels||[]).join("|"), c.status||""
+  ]);
+  let csv = "front,back,labels,status\n";
+  rows.forEach(r=>{csv+=r.map(v=>`"${v.replace(/"/g,'""')}"`).join(",")+"\n";});
+  const blob = new Blob([csv],{type:"text/csv"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="card-garden.csv";
+  a.click();
+}
+
+/* v44 filter */
+function filterCards(cards, status, labels, mode){
+  return cards.filter(c=>{
+    const s = !status || c.status===status;
+    const l = labels.length===0 || (
+      mode==="OR" ? labels.some(x=>c.labels.includes(x))
+                  : labels.every(x=>c.labels.includes(x))
+    );
+    return s && l;
+  });
+}
