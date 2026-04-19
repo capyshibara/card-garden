@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#EBDBBC" />
+  <meta name="theme-color" content="#CC785C" />
   <title>Card Garden</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -31,7 +31,14 @@
     </nav>
   </div>
 
-  <div class="loading-overlay" id="loadingOverlay" hidden><div class="loading-card"><div class="loading-title">Signing you in…</div><div class="loading-subtitle">Returning to your private card garden.</div></div></div>
+
+  <div id="loadingOverlay" hidden>
+    <div class="loading-card">
+      <h3>Card Garden</h3>
+      <p id="loadingText">Signing you in…</p>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
   <script type="module" src="app.js"></script>
 </body>

@@ -157,6 +157,9 @@ h2 { font-size: calc(var(--fs-title) * 0.68); line-height: 0.98; font-weight: 70
   background: var(--manilla);
   color: var(--slate-dark);
   border: 1px solid var(--kraft);
+
+  background: #CC785C;
+  color: #fff;
 }
 
 #app { display: grid; gap: 14px; }
@@ -568,6 +571,8 @@ h2 { font-size: calc(var(--fs-title) * 0.68); line-height: 0.98; font-weight: 70
   grid-template-columns: repeat(3,1fr);
   padding: 6px;
   box-shadow: 0 16px 28px rgba(82,56,40,.10);
+
+  background: #EBDBBC;
 }
 
 .toast {
@@ -1403,49 +1408,44 @@ h2 { font-size: calc(var(--fs-title) * 0.68); line-height: 0.98; font-weight: 70
 }
 
 
-/* v42 auth + nav fixes */
-.bottom-nav {
-  background: rgba(235, 219, 188, 0.98) !important;
-  border-color: rgba(25,25,25,0.08) !important;
-}
-.nav-item {
-  color: var(--slate-dark) !important;
-}
-.nav-item.active {
-  background: rgba(204, 120, 92, 0.96) !important;
-  color: #ffffff !important;
-  border: 1px solid rgba(25,25,25,0.08);
-}
-
-.loading-overlay[hidden] { display: none !important; }
-.loading-overlay {
+/* v43 auth + version */
+#loadingOverlay[hidden] { display: none !important; }
+#loadingOverlay {
   position: fixed;
   inset: 0;
-  z-index: 120;
+  background: rgba(244, 241, 234, 0.96);
+  backdrop-filter: blur(4px);
   display: grid;
   place-items: center;
-  background: rgba(250, 250, 247, 0.82);
-  backdrop-filter: blur(10px);
+  z-index: 9999;
   padding: 24px;
 }
 .loading-card {
-  width: min(92vw, 420px);
-  border-radius: 28px;
+  width: min(92vw, 360px);
   background: #fffdf9;
-  border: 1px solid rgba(25,25,25,0.08);
-  box-shadow: 0 20px 40px rgba(25,25,25,0.12);
-  padding: 28px 24px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  box-shadow: var(--shadow);
+  padding: 24px 20px;
   text-align: center;
 }
-.loading-title {
-  font-family: "Cormorant Garamond", serif;
-  font-size: clamp(34px, 6vw, 48px);
-  line-height: 0.95;
-  color: var(--slate-dark);
+.loading-card h3 {
+  font-size: calc(var(--fs-title) * 0.5);
+  margin-bottom: 8px;
 }
-.loading-subtitle {
-  margin-top: 10px;
+.loading-card p {
   color: var(--ink-soft);
-  font-size: var(--fs-body);
-  line-height: 1.5;
+}
+.version-note {
+  margin-top: 18px;
+  text-align: center;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+.bottom-nav {
+  background: #EBDBBC;
+}
+.nav-item.active {
+  background: #CC785C;
+  color: #fff;
 }

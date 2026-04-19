@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut, browserLocalPersistence, setPersistence } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-auth.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-auth.js";
 import { getFirestore, collection, doc, getDocs, setDoc, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
 import { marked } from "https://cdn.jsdelivr.net/npm/marked/lib/marked.esm.js";
 
@@ -33,7 +33,8 @@ const FIREBASE_CONFIG = {
   appId: "1:69133538887:web:865e372186a94d268c0362"
 };
 
-const AUTH_REDIRECT_KEY = "cg-v42-auth-redirect";
+const APP_VERSION = "Card Garden v43 @capyshibara";
+const AUTH_REDIRECT_FLAG = "cg-auth-redirect-pending";
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -400,36 +401,23 @@ function ensureFirebase() {
   firestoreDb = getFirestore(firebaseApp);
 }
 
-function isMobileSafariLike() {
+async function configureAuthPersistence() {
+  ensureFirebase();
+  try {
+    await setPersistence(firebaseAuth, browserLocalPersistence);
+  } catch (error) {
+    console.warn("Could not set auth persistence", error);
+  }
+}
+
+function isMobileDevice() {
   const ua = navigator.userAgent || "";
   return /iPhone|iPad|iPod|Android/i.test(ua);
 }
 
-
-function isRedirectPending() {
-  try { return sessionStorage.getItem(AUTH_REDIRECT_KEY) === "1"; } catch { return false; }
-}
-
-function setRedirectPending(value) {
-  try {
-    if (value) sessionStorage.setItem(AUTH_REDIRECT_KEY, "1");
-    else sessionStorage.removeItem(AUTH_REDIRECT_KEY);
-  } catch {}
-}
-
-function showLoading(message = "Signing you in…", detail = "Returning to your private card garden.") {
-  const overlay = document.getElementById("loadingOverlay");
-  if (!overlay) return;
-  const title = overlay.querySelector(".loading-title");
-  const subtitle = overlay.querySelector(".loading-subtitle");
-  if (title) title.textContent = message;
-  if (subtitle) subtitle.textContent = detail;
-  overlay.hidden = false;
-}
-
-function hideLoading() {
-  const overlay = document.getElementById("loadingOverlay");
-  if (overlay) overlay.hidden = true;
+function isLegacyMobileRedirectPreferred() {
+  const ua = navigator.userAgent || "";
+  return /iPhone|iPad|iPod|Android/i.test(ua);
 }
 
 function cardsCollectionRef(userId) {
@@ -525,7 +513,6 @@ const titleEl = document.getElementById("headerTitle");
 const eyebrowEl = document.getElementById("headerEyebrow");
 const backButton = document.getElementById("backButton");
 const toastEl = document.getElementById("toast");
-const loadingOverlayEl = document.getElementById("loadingOverlay");
 const navItems = [...document.querySelectorAll(".nav-item")];
 const topbarActions = document.getElementById("topbarActions");
 
@@ -943,29 +930,35 @@ function resetForm() {
 async function signInWithGoogle() {
   try {
     ensureFirebase();
+    await configureAuthPersistence();
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: "select_account" });
+    setLoadingVisible(true, "Opening Google sign-in…");
 
-    if (isMobileSafariLike()) {
-      setRedirectPending(true);
-      showLoading();
-      render();
+    try {
+      await signInWithPopup(firebaseAuth, provider);
+      sessionStorage.removeItem(AUTH_REDIRECT_FLAG);
+      setLoadingVisible(false);
+      return;
+    } catch (popupError) {
+      const popupFallbackCodes = new Set([
+        "auth/popup-blocked",
+        "auth/cancelled-popup-request",
+        "auth/popup-closed-by-user",
+        "auth/operation-not-supported-in-this-environment"
+      ]);
+      if (!popupFallbackCodes.has(popupError?.code) && !isMobileDevice()) {
+        throw popupError;
+      }
+      sessionStorage.setItem(AUTH_REDIRECT_FLAG, "1");
+      setLoadingVisible(true, "Redirecting to Google…");
       await signInWithRedirect(firebaseAuth, provider);
       return;
     }
-
-    await signInWithPopup(firebaseAuth, provider);
   } catch (error) {
     console.error(error);
-    if (error?.code === "auth/popup-blocked" || error?.code === "auth/cancelled-popup-request") {
-      setRedirectPending(true);
-      showLoading();
-      render();
-      await signInWithRedirect(firebaseAuth, new GoogleAuthProvider());
-      return;
-    }
-    setRedirectPending(false);
-    hideLoading();
+    sessionStorage.removeItem(AUTH_REDIRECT_FLAG);
+    setLoadingVisible(false);
     showToast("Google sign-in failed");
   }
 }
@@ -1245,13 +1238,11 @@ function render() {
 }
 
 function renderAuthLoading() {
-  const title = isRedirectPending() ? "Signing you in…" : "Loading your library…";
-  const detail = isRedirectPending() ? "Finishing Google sign-in on this device." : "Checking your sign-in state.";
   appEl.innerHTML = `
     <section class="panel empty-panel fade-in">
       <div class="empty-box">
-        <h2>${title}</h2>
-        <div class="muted">${detail}</div>
+        <h2>Loading your library…</h2>
+        <div class="muted">Checking your sign-in state.</div>
       </div>
     </section>
   `;
@@ -1610,6 +1601,7 @@ function renderMetrics() {
           <div class="metric-value metric-user">${escapeHtml(state.user?.displayName || state.user?.email || "Google user")}</div>
         </div>
       </div>
+      <div class="version-note">${APP_VERSION}</div>
     </section>
   `;
 }
@@ -1769,29 +1761,11 @@ function applyStampFaces() {
 }
 
 
-let authSyncCounter = 0;
-
-async function applyAuthState(user) {
-  const syncId = ++authSyncCounter;
-  state.user = user;
-  authReady = true;
-  state.route = "root";
-  state.selectedId = null;
-  clearCardSelection();
-  state.dismissedIds.clear();
-  state.flippedIds.clear();
-
-  if (user) {
-    await startCloud(user);
-  } else {
-    await stopCloud();
-    state.cards = loadCards();
-  }
-
-  if (syncId !== authSyncCounter) return;
-  setRedirectPending(false);
-  hideLoading();
-  render();
+function setLoadingVisible(visible, message = "Signing you in…") {
+  const overlay = document.getElementById("loadingOverlay");
+  const text = document.getElementById("loadingText");
+  if (text) text.textContent = message;
+  if (overlay) overlay.hidden = !visible;
 }
 
 function showToast(text) {
@@ -1803,33 +1777,43 @@ function showToast(text) {
 
 window.formatEditor = formatEditor;
 
-ensureFirebase();
+async function initAuth() {
+  ensureFirebase();
+  await configureAuthPersistence();
 
-(async function bootstrapAuth() {
-  try {
-    await setPersistence(firebaseAuth, browserLocalPersistence);
-  } catch (error) {
-    console.warn("Persistence setup skipped", error);
+  if (sessionStorage.getItem(AUTH_REDIRECT_FLAG)) {
+    setLoadingVisible(true, "Signing you in…");
   }
 
-  if (isRedirectPending()) {
-    showLoading();
+  try {
+    await getRedirectResult(firebaseAuth);
+  } catch (error) {
+    console.error(error);
   }
 
   onAuthStateChanged(firebaseAuth, async (user) => {
-    await applyAuthState(user);
+    state.user = user;
+    authReady = true;
+    state.route = "root";
+    state.selectedId = null;
+    clearCardSelection();
+
+    if (user) {
+      sessionStorage.removeItem(AUTH_REDIRECT_FLAG);
+      setLoadingVisible(true, "Loading your cards…");
+      await startCloud(user);
+      setLoadingVisible(false);
+    } else {
+      await stopCloud();
+      state.cards = loadCards();
+      if (!sessionStorage.getItem(AUTH_REDIRECT_FLAG)) {
+        setLoadingVisible(false);
+      }
+    }
+    render();
   });
 
-  try {
-    const result = await getRedirectResult(firebaseAuth);
-    if (result?.user && (!state.user || state.user.uid !== result.user.uid)) {
-      await applyAuthState(result.user);
-    }
-  } catch (error) {
-    console.error(error);
-    setRedirectPending(false);
-    hideLoading();
-  }
-
   render();
-})();
+}
+
+initAuth();
