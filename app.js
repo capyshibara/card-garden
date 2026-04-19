@@ -33,7 +33,7 @@ const FIREBASE_CONFIG = {
   appId: "1:69133538887:web:865e372186a94d268c0362"
 };
 
-const APP_VERSION = "Card Garden v43 @capyshibara";
+const APP_VERSION = "Card Garden v49";
 const AUTH_REDIRECT_FLAG = "cg-auth-redirect-pending";
 
 marked.setOptions({ gfm: true, breaks: true });
@@ -581,6 +581,27 @@ topbarActions.addEventListener("click", async (e) => {
   }
 });
 
+
+function exportJsonFromState() {
+  const data = Array.isArray(state.cards) ? state.cards : [];
+  if (!data.length) {
+    showToast("No cards to export");
+    return;
+  }
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "card-garden.json";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+    a.remove();
+  }, 300);
+  showToast("JSON exported");
+}
+
 appEl.addEventListener("click", async (e) => {
   const action = e.target.closest("[data-action]");
   if (!action) return;
@@ -661,6 +682,7 @@ appEl.addEventListener("click", async (e) => {
     return;
   }
   if (type === "import-selected-cards") return importSelectedCards();
+  if (type === "export-json") return exportJsonFromState();
 });
 
 appEl.addEventListener("change", async (e) => {
@@ -1210,7 +1232,7 @@ function updateHeader() {
     `;
   } else {
     eyebrowEl.textContent = "Your card health";
-    titleEl.textContent = "Metrics";
+    titleEl.textContent = "Stats";
   }
 
   if (authReady && state.user && state.tab === "metrics" && state.route === "root") {
@@ -1601,7 +1623,10 @@ function renderMetrics() {
           <div class="metric-value metric-user">${escapeHtml(state.user?.displayName || state.user?.email || "Google user")}</div>
         </div>
       </div>
-      <div class="version-note">${APP_VERSION}</div>
+      <div class="version-note">Card Garden v49<br>@capyshibara</div>
+      <div class="metrics-actions">
+        <button class="secondary-button" data-action="export-json">Export JSON</button>
+      </div>
     </section>
   `;
 }
@@ -1817,29 +1842,3 @@ async function initAuth() {
 }
 
 initAuth();
-
-
-// v48 export JSON (safe)
-function getCardsForExport() {
-  if (Array.isArray(window.cards)) return window.cards;
-  if (Array.isArray(window.allCards)) return window.allCards;
-  if (Array.isArray(window.state?.cards)) return window.state.cards;
-  console.warn("No cards source found");
-  return [];
-}
-
-function exportJSON() {
-  const data = getCardsForExport();
-  if (!data.length) {
-    alert("No cards to export");
-    return;
-  }
-  const blob = new Blob(
-    [JSON.stringify(data, null, 2)],
-    { type: "application/json" }
-  );
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "card-garden.json";
-  a.click();
-}
