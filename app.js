@@ -33,7 +33,7 @@ const FIREBASE_CONFIG = {
   appId: "1:69133538887:web:865e372186a94d268c0362"
 };
 
-const APP_VERSION = "Card Garden v49";
+const APP_VERSION = "Card Garden v50";
 const AUTH_REDIRECT_FLAG = "cg-auth-redirect-pending";
 
 marked.setOptions({ gfm: true, breaks: true });
@@ -356,7 +356,10 @@ let state = {
   importDraft: emptyImportDraft(),
   cloud: loadCloud(),
   user: null,
-  migratedUserIds: loadMigratedUsers()
+  migratedUserIds: loadMigratedUsers(),
+  cardFilters: { statuses: [], labels: [] },
+  cardFiltersDraft: { statuses: [], labels: [] },
+  cardFilterModalOpen: false
 };
 
 function persistCardsLocal() {
@@ -532,12 +535,16 @@ document.querySelector(".bottom-nav").addEventListener("click", (e) => {
   state.route = "root";
   state.selectedId = null;
   clearCardSelection();
-  if (state.tab !== "cards") resetImportDraft();
+  if (state.tab !== "cards") {
+    resetImportDraft();
+    state.cardFilterModalOpen = false;
+  }
   persistUI();
   render();
 });
 
 backButton.addEventListener("click", () => {
+  state.cardFilterModalOpen = false;
   if (state.route === "import") resetImportDraft();
   state.route = "root";
   state.selectedId = null;
@@ -553,6 +560,7 @@ topbarActions.addEventListener("click", async (e) => {
   if (type === "sign-out") return signOutUser();
   if (type === "reset-form") return resetForm();
   if (type === "open-import") return openImport();
+  if (type === "open-card-filters") return openCardFilters();
   if (type === "sign-in-google") return signInWithGoogle();
   if (type === "sign-out") return signOutUser();
   if (type === "toggle-card-selection-mode") {
@@ -682,6 +690,12 @@ appEl.addEventListener("click", async (e) => {
     return;
   }
   if (type === "import-selected-cards") return importSelectedCards();
+  if (type === "toggle-filter-status") return toggleCardFilterDraft("statuses", action.dataset.value);
+  if (type === "toggle-filter-label") return toggleCardFilterDraft("labels", action.dataset.value);
+  if (type === "close-card-filters") return closeCardFilters();
+  if (type === "apply-card-filters") return applyCardFilters();
+  if (type === "clear-card-filters-draft") return clearCardFilterDraft();
+  if (type === "clear-card-filters") return clearCardFilters();
   if (type === "export-json") return exportJsonFromState();
 });
 
@@ -764,6 +778,7 @@ appEl.addEventListener("submit", async (e) => {
   state.tab = "cards";
   state.selectedId = null;
   clearCardSelection();
+  state.cardFilterModalOpen = false;
   render();
   showToast("Card created");
 });
@@ -774,6 +789,7 @@ function openCreate() {
   state.selectedId = null;
   state.formLabels = [];
   clearCardSelection();
+  state.cardFilterModalOpen = false;
   render();
 }
 
@@ -782,11 +798,13 @@ function openImport() {
   state.route = "import";
   state.selectedId = null;
   clearCardSelection();
+  state.cardFilterModalOpen = false;
   render();
 }
 
 function openDetail(id) {
   clearCardSelection();
+  state.cardFilterModalOpen = false;
   state.route = "detail";
   state.selectedId = id;
   render();
@@ -796,6 +814,7 @@ function openEdit(id) {
   const card = state.cards.find(item => item.id === id);
   if (!card) return;
   clearCardSelection();
+  state.cardFilterModalOpen = false;
   state.route = "edit";
   state.selectedId = id;
   state.formLabels = [...card.labels];
@@ -913,7 +932,7 @@ function toggleCardSelection(id, forcedValue = null) {
 
 function selectAllCards() {
   state.cardsSelectionMode = true;
-  state.selectedCardIds = new Set(state.cards.map(card => card.id));
+  state.selectedCardIds = new Set(getFilteredCards(state.cards).map(card => card.id));
 }
 
 async function deleteSelectedCards() {
@@ -1228,6 +1247,7 @@ function updateHeader() {
     topbarActions.innerHTML = `
       <button class="header-action-btn" data-action="open-import">Import</button>
       ${state.cards.length ? `<button class="header-action-btn" data-action="toggle-card-selection-mode">${state.cardsSelectionMode ? "Done" : "Select"}</button>` : ""}
+      ${state.cards.length && !state.cardsSelectionMode ? `<button class="header-action-btn" data-action="open-card-filters">Filter</button>` : ""}
       <button class="plus-button" data-action="open-create" aria-label="Create a card">+</button>
     `;
   } else {
@@ -1335,12 +1355,139 @@ function renderHome() {
   applyStampFaces();
 }
 
-function renderCardsToolbar(cards) {
-  if (!cards.length) return "";
+
+function cloneCardFilters(filters = {}) {
+  return {
+    statuses: Array.isArray(filters.statuses) ? [...filters.statuses] : [],
+    labels: Array.isArray(filters.labels) ? [...filters.labels] : []
+  };
+}
+
+function hasActiveCardFilters(filters = state.cardFilters) {
+  return Boolean((filters.statuses && filters.statuses.length) || (filters.labels && filters.labels.length));
+}
+
+function getAllCardLabels() {
+  return [...new Set(state.cards.flatMap(card => Array.isArray(card.labels) ? card.labels : []).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b));
+}
+
+function getFilteredCards(cards = state.cards) {
+  const filters = state.cardFilters || { statuses: [], labels: [] };
+  const statuses = Array.isArray(filters.statuses) ? filters.statuses : [];
+  const labels = Array.isArray(filters.labels) ? filters.labels : [];
+  return cards.filter(card => {
+    const statusMatch = !statuses.length || statuses.includes(card.status);
+    const cardLabels = Array.isArray(card.labels) ? card.labels : [];
+    const labelMatch = !labels.length || labels.some(label => cardLabels.includes(label));
+    return statusMatch && labelMatch;
+  });
+}
+
+function openCardFilters() {
+  state.cardFiltersDraft = cloneCardFilters(state.cardFilters);
+  state.cardFilterModalOpen = true;
+  render();
+}
+
+function closeCardFilters() {
+  state.cardFilterModalOpen = false;
+  render();
+}
+
+function toggleCardFilterDraft(field, value) {
+  const next = cloneCardFilters(state.cardFiltersDraft);
+  const list = new Set(next[field] || []);
+  if (list.has(value)) list.delete(value);
+  else list.add(value);
+  next[field] = [...list];
+  state.cardFiltersDraft = next;
+  render();
+}
+
+function clearCardFilterDraft() {
+  state.cardFiltersDraft = { statuses: [], labels: [] };
+  render();
+}
+
+function applyCardFilters() {
+  state.cardFilters = cloneCardFilters(state.cardFiltersDraft);
+  state.cardFilterModalOpen = false;
+  state.selectedCardIds.clear();
+  state.cardsSelectionMode = false;
+  render();
+}
+
+function clearCardFilters() {
+  state.cardFilters = { statuses: [], labels: [] };
+  state.cardFiltersDraft = { statuses: [], labels: [] };
+  state.cardFilterModalOpen = false;
+  state.selectedCardIds.clear();
+  state.cardsSelectionMode = false;
+  render();
+}
+
+function renderFilterChips(values, selectedValues, actionName, kind = "generic") {
+  return values.map(value => {
+    const selected = selectedValues.includes(value);
+    const selectedClass = selected ? "is-selected" : "";
+    const toneClass = kind === "label" ? labelToneClass(value) : "";
+    const chipClass = kind === "label" ? `filter-chip filter-chip-label ${toneClass} ${selectedClass}` : `filter-chip filter-chip-status ${selectedClass}`;
+    return `<button class="${chipClass}" data-action="${actionName}" data-value="${escapeHtml(value)}">${escapeHtml(value)}</button>`;
+  }).join("");
+}
+
+function renderCardsFilterSummary(filteredCount, totalCount) {
+  if (!hasActiveCardFilters()) return "";
+  const parts = [];
+  if (state.cardFilters.statuses.length) parts.push(`Status(${state.cardFilters.statuses.length})`);
+  if (state.cardFilters.labels.length) parts.push(`Labels(${state.cardFilters.labels.length})`);
+  return `
+    <div class="cards-filter-summary">
+      <div class="muted">Filtered by: ${parts.join(" • ")} • ${filteredCount} of ${totalCount} cards</div>
+      <button class="text-action-btn" data-action="clear-card-filters">Clear filters</button>
+    </div>
+  `;
+}
+
+function renderCardsFilterModal() {
+  if (!state.cardFilterModalOpen) return "";
+  const labels = getAllCardLabels();
+  return `
+    <div class="filter-backdrop" data-action="close-card-filters">
+      <div class="filter-sheet" role="dialog" aria-modal="true" aria-label="Filter cards" onclick="event.stopPropagation()">
+        <div class="filter-sheet-head">
+          <h3 class="panel-title">Filter cards</h3>
+          <button class="icon-button filter-close" data-action="close-card-filters" aria-label="Close filter">×</button>
+        </div>
+        <div class="filter-section">
+          <div class="field-label">Status</div>
+          <div class="filter-chip-row">
+            ${renderFilterChips(STATUS_VALUES, state.cardFiltersDraft.statuses, "toggle-filter-status", "status")}
+          </div>
+        </div>
+        <div class="filter-section">
+          <div class="field-label">Labels</div>
+          <div class="filter-chip-row">
+            ${labels.length ? renderFilterChips(labels, state.cardFiltersDraft.labels, "toggle-filter-label", "label") : `<div class="muted">No labels yet</div>`}
+          </div>
+        </div>
+        <div class="filter-helper muted">Within the same field: OR • Across fields: AND</div>
+        <div class="filter-sheet-actions">
+          <button class="secondary-button slim-button" data-action="clear-card-filters-draft">Clear all</button>
+          <button class="primary-button slim-button" data-action="apply-card-filters">Apply filters</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderCardsToolbar(cards, totalCount = cards.length) {
+  if (!totalCount) return "";
   if (!state.cardsSelectionMode) {
     return `
       <div class="cards-toolbar cards-toolbar-summary-only">
-        <div class="muted">${cards.length} card${cards.length > 1 ? "s" : ""}</div>
+        <div class="muted">${hasActiveCardFilters() ? `${cards.length} of ${totalCount} cards` : `${cards.length} card${cards.length > 1 ? "s" : ""}`}</div>
       </div>
     `;
   }
@@ -1358,8 +1505,9 @@ function renderCardsToolbar(cards) {
 }
 
 function renderCards() {
-  const cards = sortCardsByPosition(state.cards);
-  if (!cards.length) {
+  const allCards = sortCardsByPosition(state.cards);
+  const cards = getFilteredCards(allCards);
+  if (!allCards.length) {
     appEl.innerHTML = `
       <section class="panel empty-panel fade-in">
         <div class="empty-box">
@@ -1376,8 +1524,11 @@ function renderCards() {
 
   appEl.innerHTML = `
     <section class="panel fade-in">
-      ${renderCardsToolbar(cards)}
-      ${cards.map((card, index) => `
+      ${renderCardsToolbar(cards, allCards.length)}
+      ${renderCardsFilterSummary(cards.length, allCards.length)}
+      ${cards.length ? cards.map((card) => {
+        const actualIndex = allCards.findIndex(item => item.id === card.id);
+        return `
         <div class="list-card ${state.cardsSelectionMode ? "is-select-mode" : ""}">
           <div class="list-card-head">
             ${state.cardsSelectionMode ? `
@@ -1403,13 +1554,22 @@ function renderCards() {
             </button>
             ${state.cardsSelectionMode ? "" : `
               <div class="list-card-actions">
-                <button class="icon-ghost" data-action="move-up" data-id="${card.id}" aria-label="Move up" ${index === 0 ? "disabled" : ""}>↑</button>
-                <button class="icon-ghost" data-action="move-down" data-id="${card.id}" aria-label="Move down" ${index === cards.length - 1 ? "disabled" : ""}>↓</button>
+                <button class="icon-ghost" data-action="move-up" data-id="${card.id}" aria-label="Move up" ${actualIndex === 0 ? "disabled" : ""}>↑</button>
+                <button class="icon-ghost" data-action="move-down" data-id="${card.id}" aria-label="Move down" ${actualIndex === allCards.length - 1 ? "disabled" : ""}>↓</button>
               </div>
             `}
           </div>
         </div>
-      `).join("")}
+      `}).join("") : `
+        <div class="cards-empty-filter">
+          <div class="panel-title">No cards match this filter</div>
+          <div class="muted">Try removing one or more selected values.</div>
+          <div class="empty-actions">
+            <button class="secondary-button slim-button" data-action="clear-card-filters">Clear filters</button>
+          </div>
+        </div>
+      `}
+      ${renderCardsFilterModal()}
     </section>
   `;
 }
@@ -1623,7 +1783,7 @@ function renderMetrics() {
           <div class="metric-value metric-user">${escapeHtml(state.user?.displayName || state.user?.email || "Google user")}</div>
         </div>
       </div>
-      <div class="version-note">Card Garden v49<br>@capyshibara</div>
+      <div class="version-note">Card Garden v50<br>@capyshibara</div>
       <div class="metrics-actions">
         <button class="secondary-button" data-action="export-json">Export JSON</button>
       </div>
