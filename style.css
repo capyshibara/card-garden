@@ -1652,3 +1652,34 @@ h2 { font-size: calc(var(--fs-title) * 0.68); line-height: 0.98; font-weight: 70
     flex: 1 1 140px;
   }
 }
+
+#aiFab {
+  position: fixed;
+  bottom: 80px;
+  right: 16px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #CC785C;
+  color: white;
+  font-size: 24px;
+  border: none;
+}
+
+.ai-modal {
+  position: fixed;
+  inset:0;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  background: rgba(0,0,0,0.3);
+}
+
+.ai-modal.show { display:flex; }
+
+.ai-box {
+  background:#fff;
+  padding:16px;
+  border-radius:12px;
+  width:80%;
+}

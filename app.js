@@ -2021,3 +2021,28 @@ async function initAuth() {
 }
 
 initAuth();
+
+function openAIModal(){ document.getElementById("aiModal").classList.add("show"); }
+function closeAIModal(){ document.getElementById("aiModal").classList.remove("show"); }
+
+async function generateAI(){
+  const topic=document.getElementById("aiTopic").value;
+  const difficulty=document.getElementById("aiDifficulty").value;
+  const count=document.getElementById("aiCount").value;
+
+  const res=await fetch("YOUR_FUNCTION_URL",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({topic,difficulty,count})
+  });
+
+  const cards=await res.json();
+
+  if(window.openImportPreview){
+    openImportPreview(cards);
+  } else {
+    alert("Generated but preview hook not found");
+  }
+
+  closeAIModal();
+}

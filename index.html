@@ -41,5 +41,25 @@
 
   <div class="toast" id="toast"></div>
   <script type="module" src="app.js"></script>
+
+<button id="aiFab" onclick="openAIModal()">✨</button>
+
+<div id="aiModal" class="ai-modal">
+  <div class="ai-box">
+    <h3>Generate flashcards</h3>
+    <input id="aiTopic" placeholder="Topic"/>
+    <select id="aiDifficulty">
+      <option>Easy</option>
+      <option>Medium</option>
+      <option>Hard</option>
+    </select>
+    <input id="aiCount" type="number" value="5" min="3" max="10"/>
+    <div class="ai-actions">
+      <button onclick="closeAIModal()">Cancel</button>
+      <button onclick="generateAI()">Generate</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
