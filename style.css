@@ -1653,33 +1653,76 @@ h2 { font-size: calc(var(--fs-title) * 0.68); line-height: 0.98; font-weight: 70
   }
 }
 
-#aiFab {
+
+/* v53 AI generation */
+.ai-fab {
   position: fixed;
-  bottom: 80px;
-  right: 16px;
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
+  right: 18px;
+  bottom: 92px;
+  width: 58px;
+  height: 58px;
+  border-radius: 999px;
+  border: 1px solid rgba(79, 58, 35, 0.16);
   background: #CC785C;
-  color: white;
+  color: #fff;
   font-size: 24px;
-  border: none;
+  line-height: 1;
+  box-shadow: 0 14px 26px rgba(0, 0, 0, 0.16);
+  z-index: 30;
 }
 
-.ai-modal {
+.ai-modal-backdrop {
   position: fixed;
-  inset:0;
-  display:none;
-  align-items:center;
-  justify-content:center;
-  background: rgba(0,0,0,0.3);
+  inset: 0;
+  background: rgba(37, 31, 25, 0.30);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  z-index: 60;
 }
 
-.ai-modal.show { display:flex; }
+.ai-modal-card {
+  width: min(100%, 420px);
+  border-radius: 26px;
+  background: #fffaf3;
+  border: 1px solid rgba(79, 58, 35, 0.14);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.15);
+  padding: 18px 18px 16px;
+}
 
-.ai-box {
-  background:#fff;
-  padding:16px;
-  border-radius:12px;
-  width:80%;
+.ai-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.ai-form {
+  display: grid;
+  gap: 12px;
+}
+
+.ai-form-row {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.ai-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+@media (max-width: 640px) {
+  .ai-form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .ai-fab {
+    right: 16px;
+    bottom: 88px;
+  }
 }

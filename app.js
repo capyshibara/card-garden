@@ -33,7 +33,7 @@ const FIREBASE_CONFIG = {
   appId: "1:69133538887:web:865e372186a94d268c0362"
 };
 
-const APP_VERSION = "Card Garden v51";
+const APP_VERSION = "Card Garden v53";
 const AUTH_REDIRECT_FLAG = "cg-auth-redirect-pending";
 
 marked.setOptions({ gfm: true, breaks: true });
@@ -358,7 +358,10 @@ let state = {
   user: null,
   migratedUserIds: loadMigratedUsers(),
   cardFilters: { statuses: [], labels: [] },
-  filterModalOpen: false
+  filterModalOpen: false,
+  aiModalOpen: false,
+  aiLoading: false,
+  aiDraft: { topic: "", difficulty: "Easy", count: 5 }
 };
 
 function persistCardsLocal() {
@@ -649,6 +652,20 @@ appEl.addEventListener("click", async (e) => {
   if (type === "noop-filter-modal") {
     return;
   }
+  if (type === "open-ai-modal") {
+    state.aiModalOpen = true;
+    render();
+    return;
+  }
+  if (type === "close-ai-modal") {
+    state.aiModalOpen = false;
+    state.aiLoading = false;
+    render();
+    return;
+  }
+  if (type === "noop-ai-modal") {
+    return;
+  }
   if (type === "open-create") return openCreate();
   if (type === "sign-in-google") return signInWithGoogle();
   if (type === "sign-out") return signOutUser();
@@ -751,6 +768,11 @@ appEl.addEventListener("submit", async (e) => {
   if (e.target.matches("#cardFilterForm")) {
     e.preventDefault();
     applyCardFiltersFromForm();
+    return;
+  }
+  if (e.target.matches("#aiGenerateForm")) {
+    e.preventDefault();
+    await generateAiCards();
     return;
   }
   if (!e.target.matches("#cardForm")) return;
@@ -1489,6 +1511,121 @@ function applyCardFiltersFromForm() {
 }
 
 
+
+function renderAiFab() {
+  return `
+    <button class="ai-fab" data-action="open-ai-modal" aria-label="Generate flashcards with AI">✨</button>
+  `;
+}
+
+function renderAiModal() {
+  if (!state.aiModalOpen) return "";
+  return `
+    <div class="ai-modal-backdrop" data-action="close-ai-modal">
+      <div class="ai-modal-card" data-action="noop-ai-modal">
+        <div class="ai-modal-head">
+          <h2 class="panel-title">Generate flashcards</h2>
+          <button class="icon-button" data-action="close-ai-modal" aria-label="Close AI modal">×</button>
+        </div>
+
+        <form id="aiGenerateForm" class="ai-form">
+          <div class="field">
+            <label class="field-label" for="aiTopicInput">Topic</label>
+            <input id="aiTopicInput" class="label-input" name="topic" maxlength="120" placeholder="e.g. Marketing basics" value="${escapeHtml(state.aiDraft.topic || "")}" />
+          </div>
+
+          <div class="ai-form-row">
+            <div class="field">
+              <label class="field-label" for="aiDifficultySelect">Difficulty</label>
+              <select id="aiDifficultySelect" class="import-select" name="difficulty">
+                ${["Easy", "Medium", "Hard"].map(level => `<option value="${level}" ${state.aiDraft.difficulty === level ? "selected" : ""}>${level}</option>`).join("")}
+              </select>
+            </div>
+            <div class="field">
+              <label class="field-label" for="aiCountInput">Number of cards</label>
+              <input id="aiCountInput" class="label-input" name="count" type="number" min="3" max="10" value="${Number(state.aiDraft.count) || 5}" />
+            </div>
+          </div>
+
+          <div class="note-text">Generated cards will open in the existing import preview so you can review before importing.</div>
+
+          <div class="ai-actions">
+            <button type="button" class="secondary-button slim-button" data-action="close-ai-modal">Cancel</button>
+            <button type="submit" class="primary-button slim-button" ${state.aiLoading ? "disabled" : ""}>${state.aiLoading ? "Generating…" : "Generate"}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+}
+
+function syncAiDraftFromDom() {
+  if (!state.aiModalOpen) return;
+  const topic = document.getElementById("aiTopicInput")?.value ?? state.aiDraft.topic;
+  const difficulty = document.getElementById("aiDifficultySelect")?.value ?? state.aiDraft.difficulty;
+  const count = Number(document.getElementById("aiCountInput")?.value ?? state.aiDraft.count) || 5;
+  state.aiDraft = {
+    topic: String(topic || "").trim(),
+    difficulty: difficulty || "Easy",
+    count: Math.max(3, Math.min(10, count))
+  };
+}
+
+async function generateAiCards() {
+  syncAiDraftFromDom();
+  const topic = state.aiDraft.topic.trim();
+  if (!topic) {
+    showToast("Please enter a topic");
+    return;
+  }
+
+  state.aiLoading = true;
+  render();
+
+  try {
+    const response = await fetch("https://generatecards-msb5kcbkpq-uc.a.run.app", {
+      method: "POST",
+      body: JSON.stringify({
+        topic,
+        difficulty: state.aiDraft.difficulty,
+        count: state.aiDraft.count
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error("AI generation failed");
+    }
+
+    const cards = await response.json();
+    if (!Array.isArray(cards) || !cards.length) {
+      throw new Error("No cards generated");
+    }
+
+    const items = cards.map((item, index) => normalizeImportItem({
+      front: item.front,
+      back: item.back,
+      labels: Array.isArray(item.labels) ? [...item.labels, "ai-generated"] : ["ai-generated"],
+      status: item.status || "Learning"
+    }, index));
+
+    state.importDraft = {
+      rawText: JSON.stringify(cards, null, 2),
+      sourceName: "AI generated",
+      items
+    };
+    state.aiLoading = false;
+    state.aiModalOpen = false;
+    state.route = "import";
+    render();
+    showToast(`${items.length} AI card${items.length > 1 ? "s" : ""} ready to review`);
+  } catch (error) {
+    console.error(error);
+    state.aiLoading = false;
+    render();
+    showToast(error.message || "AI generation failed");
+  }
+}
+
 function renderCardsToolbar(cards, totalCount = cards.length) {
   const countLabel = hasActiveCardFilters()
     ? `${cards.length} card${cards.length !== 1 ? "s" : ""}`
@@ -1548,6 +1685,8 @@ function renderCards() {
         </div>
       </section>
       ${renderFilterModal()}
+      ${renderAiModal()}
+      ${renderAiFab()}
     `;
     return;
   }
@@ -1590,6 +1729,8 @@ function renderCards() {
       `).join("")}
     </section>
     ${renderFilterModal()}
+    ${renderAiModal()}
+    ${renderAiFab()}
   `;
 }
 
@@ -1802,7 +1943,7 @@ function renderMetrics() {
           <div class="metric-value metric-user">${escapeHtml(state.user?.displayName || state.user?.email || "Google user")}</div>
         </div>
       </div>
-      <div class="version-note">Card Garden v51<br>@capyshibara</div>
+      <div class="version-note">Card Garden v53<br>@capyshibara</div>
       <div class="metrics-actions">
         <button class="secondary-button" data-action="export-json">Export JSON</button>
       </div>
@@ -2021,28 +2162,3 @@ async function initAuth() {
 }
 
 initAuth();
-
-function openAIModal(){ document.getElementById("aiModal").classList.add("show"); }
-function closeAIModal(){ document.getElementById("aiModal").classList.remove("show"); }
-
-async function generateAI(){
-  const topic=document.getElementById("aiTopic").value;
-  const difficulty=document.getElementById("aiDifficulty").value;
-  const count=document.getElementById("aiCount").value;
-
-  const res=await fetch("https://generatecards-msb5kcbkpq-uc.a.run.app",{
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({topic,difficulty,count})
-  });
-
-  const cards=await res.json();
-
-  if(window.openImportPreview){
-    openImportPreview(cards);
-  } else {
-    alert("Generated but preview hook not found");
-  }
-
-  closeAIModal();
-}
