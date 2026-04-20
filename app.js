@@ -2030,7 +2030,7 @@ async function generateAI(){
   const difficulty=document.getElementById("aiDifficulty").value;
   const count=document.getElementById("aiCount").value;
 
-  const res=await fetch("YOUR_FUNCTION_URL",{
+  const res=await fetch("https://generatecards-msb5kcbkpq-uc.a.run.app",{
     method:"POST",
     headers:{"Content-Type":"application/json"},
     body:JSON.stringify({topic,difficulty,count})
