@@ -33,7 +33,7 @@ const FIREBASE_CONFIG = {
   appId: "1:69133538887:web:865e372186a94d268c0362"
 };
 
-const APP_VERSION = "Card Garden v53";
+const APP_VERSION = "Card Garden v54";
 const AUTH_REDIRECT_FLAG = "cg-auth-redirect-pending";
 
 marked.setOptions({ gfm: true, breaks: true });
@@ -1585,6 +1585,10 @@ async function generateAiCards() {
   try {
     const response = await fetch("https://generatecards-msb5kcbkpq-uc.a.run.app", {
       method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      method: "POST",
       body: JSON.stringify({
         topic,
         difficulty: state.aiDraft.difficulty,
@@ -1943,7 +1947,7 @@ function renderMetrics() {
           <div class="metric-value metric-user">${escapeHtml(state.user?.displayName || state.user?.email || "Google user")}</div>
         </div>
       </div>
-      <div class="version-note">Card Garden v53<br>@capyshibara</div>
+      <div class="version-note">Card Garden v54<br>@capyshibara</div>
       <div class="metrics-actions">
         <button class="secondary-button" data-action="export-json">Export JSON</button>
       </div>
