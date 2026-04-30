@@ -7,7 +7,9 @@ const CARDS_KEY = "cg-v15-cards";
 const CARDS_BACKUP_KEY = "cg-v15-cards-backup";
 const UI_KEY = "cg-v15-ui";
 const CLOUD_KEY = "cg-v15-cloud";
+const COLLECTIONS_KEY = "cg-v55-collections";
 const MIGRATED_USERS_KEY = "cg-v40-migrated-users";
+const GENERAL_COLLECTION_ID = "general";
 
 const LEGACY_SOURCES = [
   "cg-v14-cards",
@@ -23,7 +25,7 @@ const LEGACY_SOURCES = [
 ];
 
 const STATUS_VALUES = ["To learn", "Learning", "Learnt"];
-const UI_DEFAULTS = { tab: "home", dismissedIds: [] };
+const UI_DEFAULTS = { tab: "home", dismissedIds: [], selectedCollectionId: GENERAL_COLLECTION_ID };
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDdCD-08K9L25KGdMxFh1OB_V-akFaAQaA",
   authDomain: "card-garden-d6c8f.firebaseapp.com",
@@ -33,7 +35,7 @@ const FIREBASE_CONFIG = {
   appId: "1:69133538887:web:865e372186a94d268c0362"
 };
 
-const APP_VERSION = "Card Garden v54";
+const APP_VERSION = "Card Garden v55";
 const AUTH_REDIRECT_FLAG = "cg-auth-redirect-pending";
 
 marked.setOptions({ gfm: true, breaks: true });
@@ -257,10 +259,13 @@ function normalizeCard(raw = {}, index = 0) {
     labels,
     status,
     position: Number.isFinite(raw.position) ? Number(raw.position) : index + 1,
+    collectionId: typeof raw.collectionId === "string" && raw.collectionId.trim() ? raw.collectionId.trim() : GENERAL_COLLECTION_ID,
+    collectionName: typeof raw.collectionName === "string" && raw.collectionName.trim() ? raw.collectionName.trim() : "General",
     createdAt: typeof raw.createdAt === "string" ? raw.createdAt : new Date().toISOString(),
     updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : new Date().toISOString()
   };
 }
+
 
 function reindexCards(cards) {
   return cards
@@ -271,6 +276,68 @@ function reindexCards(cards) {
 
 function sortCardsByPosition(cards = state.cards) {
   return cards.slice().sort((a, b) => a.position - b.position || a.createdAt.localeCompare(b.createdAt));
+}
+
+function createDefaultCollection() {
+  const now = new Date().toISOString();
+  const collectionId = document.getElementById("cardCollectionSelect")?.value || state.selectedCollectionId || GENERAL_COLLECTION_ID;
+  const selectedCollection = getCollectionById(collectionId) || getCollectionById(GENERAL_COLLECTION_ID) || createDefaultCollection();
+  return {
+    id: GENERAL_COLLECTION_ID,
+    name: "General",
+    createdAt: now,
+    updatedAt: now,
+    position: 0
+  };
+}
+
+function normalizeCollection(raw = {}, index = 0) {
+  const fallback = createDefaultCollection();
+  const id = typeof raw.id === "string" && raw.id.trim() ? raw.id.trim() : (index === 0 ? GENERAL_COLLECTION_ID : `collection-${cryptoSafeId()}`);
+  return {
+    id,
+    name: typeof raw.name === "string" && raw.name.trim() ? raw.name.trim() : (id === GENERAL_COLLECTION_ID ? "General" : `Collection ${index + 1}`),
+    createdAt: typeof raw.createdAt === "string" ? raw.createdAt : fallback.createdAt,
+    updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : fallback.updatedAt,
+    position: Number.isFinite(raw.position) ? Number(raw.position) : (id === GENERAL_COLLECTION_ID ? 0 : index + 1)
+  };
+}
+
+function sortCollections(collections = []) {
+  return collections.slice().sort((a, b) => {
+    if (a.id === GENERAL_COLLECTION_ID && b.id !== GENERAL_COLLECTION_ID) return -1;
+    if (b.id === GENERAL_COLLECTION_ID && a.id !== GENERAL_COLLECTION_ID) return 1;
+    return (a.position - b.position) || a.name.localeCompare(b.name);
+  });
+}
+
+function loadCollections() {
+  const saved = safeParse(localStorage.getItem(COLLECTIONS_KEY));
+  if (!Array.isArray(saved) || !saved.length) return [createDefaultCollection()];
+  return sortCollections(saved.map((item, index) => normalizeCollection(item, index)));
+}
+
+function getCollectionById(id, collections = state.collections || []) {
+  return collections.find(collection => collection.id === id) || null;
+}
+
+function getCollectionNameById(id) {
+  return getCollectionById(id)?.name || "General";
+}
+
+function buildCollectionOptions(selectedId, includeAll = false) {
+  const options = [];
+  if (includeAll) {
+    options.push(`<option value="">All collections</option>`);
+  }
+  options.push(...sortCollections(state.collections).map(collection => `
+    <option value="${collection.id}" ${collection.id === selectedId ? "selected" : ""}>${escapeHtml(collection.name)}</option>
+  `));
+  return options.join("");
+}
+
+function countCardsForCollection(collectionId) {
+  return state.cards.filter(card => card.collectionId === collectionId).length;
 }
 
 function normalizeCloud(raw = {}) {
@@ -291,7 +358,8 @@ function normalizeCloud(raw = {}) {
 function normalizeUI(raw = {}) {
   return {
     tab: ["home", "cards", "metrics"].includes(raw.tab) ? raw.tab : UI_DEFAULTS.tab,
-    dismissedIds: Array.isArray(raw.dismissedIds) ? raw.dismissedIds.filter(Boolean) : []
+    dismissedIds: Array.isArray(raw.dismissedIds) ? raw.dismissedIds.filter(Boolean) : [],
+    selectedCollectionId: typeof raw.selectedCollectionId === "string" && raw.selectedCollectionId.trim() ? raw.selectedCollectionId.trim() : UI_DEFAULTS.selectedCollectionId
   };
 }
 
@@ -348,6 +416,8 @@ let state = {
   route: "root",
   selectedId: null,
   cards: loadCards(),
+  collections: loadCollections(),
+  selectedCollectionId: uiState.selectedCollectionId,
   dismissedIds: new Set(uiState.dismissedIds),
   flippedIds: new Set(),
   formLabels: [],
@@ -357,12 +427,65 @@ let state = {
   cloud: loadCloud(),
   user: null,
   migratedUserIds: loadMigratedUsers(),
-  cardFilters: { statuses: [], labels: [] },
+  cardFilters: { statuses: [], labels: [], collectionId: "" },
   filterModalOpen: false,
-  aiModalOpen: false,
-  aiLoading: false,
-  aiDraft: { topic: "", difficulty: "Easy", count: 5 }
+  collectionsModalOpen: false
 };
+
+function persistCollectionsLocal() {
+  localStorage.setItem(COLLECTIONS_KEY, JSON.stringify(sortCollections(state.collections)));
+}
+
+function ensureCollectionsIntegrity() {
+  const now = new Date().toISOString();
+  let collections = Array.isArray(state.collections) ? state.collections.map((item, index) => normalizeCollection(item, index)) : [];
+  if (!collections.some(collection => collection.id === GENERAL_COLLECTION_ID)) {
+    collections.unshift(createDefaultCollection());
+  }
+
+  const byId = new Map(collections.map(collection => [collection.id, collection]));
+
+  state.cards.forEach(card => {
+    if (card.collectionId && !byId.has(card.collectionId)) {
+      const created = normalizeCollection({
+        id: card.collectionId,
+        name: card.collectionName || `Collection ${collections.length + 1}`,
+        createdAt: card.createdAt || now,
+        updatedAt: card.updatedAt || now,
+        position: collections.length + 1
+      }, collections.length);
+      collections.push(created);
+      byId.set(created.id, created);
+    }
+  });
+
+  if (!byId.has(GENERAL_COLLECTION_ID)) {
+    const general = createDefaultCollection();
+    collections.unshift(general);
+    byId.set(general.id, general);
+  }
+
+  state.cards = reindexCards(state.cards.map((card, index) => {
+    let collectionId = typeof card.collectionId === "string" && card.collectionId.trim() ? card.collectionId.trim() : "";
+    if (!collectionId || !byId.has(collectionId)) collectionId = GENERAL_COLLECTION_ID;
+    const collection = byId.get(collectionId) || byId.get(GENERAL_COLLECTION_ID) || createDefaultCollection();
+    return normalizeCard({
+      ...card,
+      collectionId,
+      collectionName: collection.name
+    }, index);
+  }));
+
+  state.collections = sortCollections(collections.map((collection, index) => normalizeCollection(collection, index)));
+  if (!state.selectedCollectionId || !state.collections.some(collection => collection.id === state.selectedCollectionId)) {
+    state.selectedCollectionId = GENERAL_COLLECTION_ID;
+  }
+  if (state.cardFilters.collectionId && !state.collections.some(collection => collection.id === state.cardFilters.collectionId)) {
+    state.cardFilters.collectionId = "";
+  }
+}
+
+ensureCollectionsIntegrity();
 
 function persistCardsLocal() {
   const cards = reindexCards(state.cards.map((card, index) => normalizeCard(card, index)));
@@ -375,7 +498,8 @@ function persistCardsLocal() {
 function persistUI() {
   localStorage.setItem(UI_KEY, JSON.stringify({
     tab: state.tab,
-    dismissedIds: [...state.dismissedIds]
+    dismissedIds: [...state.dismissedIds],
+    selectedCollectionId: state.selectedCollectionId
   }));
 }
 
@@ -384,7 +508,9 @@ function persistCloudConfig() {
 }
 
 function persistLocalAll() {
+  ensureCollectionsIntegrity();
   persistCardsLocal();
+  persistCollectionsLocal();
   persistUI();
   persistCloudConfig();
 }
@@ -486,7 +612,9 @@ async function startCloud(user) {
     cloudReady = true;
     remoteCardIds = new Set(snap.docs.map(item => item.id));
     state.cards = reindexCards(snap.docs.map((item, index) => normalizeCard(item.data(), index)));
+    ensureCollectionsIntegrity();
     persistCardsLocal();
+    persistCollectionsLocal();
     render();
   }, (error) => {
     console.error(error);
@@ -563,6 +691,11 @@ topbarActions.addEventListener("click", async (e) => {
     render();
     return;
   }
+  if (type === "open-collections-modal") {
+    state.collectionsModalOpen = true;
+    render();
+    return;
+  }
   if (type === "sign-in-google") return signInWithGoogle();
   if (type === "sign-out") return signOutUser();
   if (type === "toggle-card-selection-mode") {
@@ -628,13 +761,18 @@ appEl.addEventListener("click", async (e) => {
     render();
     return;
   }
+  if (type === "open-collections-modal") {
+    state.collectionsModalOpen = true;
+    render();
+    return;
+  }
   if (type === "close-filter-modal") {
     state.filterModalOpen = false;
     render();
     return;
   }
   if (type === "clear-card-filters") {
-    state.cardFilters = { statuses: [], labels: [] };
+    state.cardFilters = { statuses: [], labels: [], collectionId: "" };
     state.filterModalOpen = false;
     render();
     return;
@@ -645,6 +783,8 @@ appEl.addEventListener("click", async (e) => {
       form.querySelectorAll('input[name="filter-status"], input[name="filter-label"]').forEach(input => {
         input.checked = false;
       });
+      const collectionSelect = document.getElementById("cardFilterCollection");
+      if (collectionSelect) collectionSelect.value = "";
       syncFilterDraftUi();
     }
     return;
@@ -652,18 +792,29 @@ appEl.addEventListener("click", async (e) => {
   if (type === "noop-filter-modal") {
     return;
   }
-  if (type === "open-ai-modal") {
-    state.aiModalOpen = true;
+  if (type === "open-collections-modal") {
+    state.collectionsModalOpen = true;
     render();
     return;
   }
-  if (type === "close-ai-modal") {
-    state.aiModalOpen = false;
-    state.aiLoading = false;
+  if (type === "close-collections-modal") {
+    state.collectionsModalOpen = false;
     render();
     return;
   }
-  if (type === "noop-ai-modal") {
+  if (type === "noop-collections-modal") {
+    return;
+  }
+  if (type === "create-collection") {
+    await createCollectionFromInput();
+    return;
+  }
+  if (type === "rename-collection") {
+    await renameCollection(action.dataset.id);
+    return;
+  }
+  if (type === "delete-collection") {
+    await deleteCollection(action.dataset.id);
     return;
   }
   if (type === "open-create") return openCreate();
@@ -755,6 +906,16 @@ appEl.addEventListener("change", async (e) => {
   if (e.target.matches('input[name="filter-status"], input[name="filter-label"]')) {
     syncFilterDraftUi();
   }
+  if (e.target.id === "homeCollectionSelect") {
+    state.selectedCollectionId = e.target.value || GENERAL_COLLECTION_ID;
+    persistUI();
+    renderHome();
+    return;
+  }
+  if (e.target.id === "cardFilterCollection") {
+    syncFilterDraftUi();
+    return;
+  }
 });
 
 appEl.addEventListener("keydown", (e) => {
@@ -768,11 +929,6 @@ appEl.addEventListener("submit", async (e) => {
   if (e.target.matches("#cardFilterForm")) {
     e.preventDefault();
     applyCardFiltersFromForm();
-    return;
-  }
-  if (e.target.matches("#aiGenerateForm")) {
-    e.preventDefault();
-    await generateAiCards();
     return;
   }
   if (!e.target.matches("#cardForm")) return;
@@ -801,6 +957,8 @@ appEl.addEventListener("submit", async (e) => {
     card.front = front;
     card.back = back;
     card.labels = [...state.formLabels];
+    card.collectionId = selectedCollection.id;
+    card.collectionName = selectedCollection.name;
     card.updatedAt = now;
     await persistCardsEverywhere();
     state.route = "detail";
@@ -817,6 +975,8 @@ appEl.addEventListener("submit", async (e) => {
     frontFormat: "html",
     backFormat: "html",
     labels: [...state.formLabels],
+    collectionId: selectedCollection.id,
+    collectionName: selectedCollection.name,
     status: "Learning",
     position: nextPosition,
     createdAt: now,
@@ -1226,6 +1386,7 @@ async function importSelectedCards() {
   }
 
   const now = new Date().toISOString();
+  const selectedCollection = getCollectionById(state.selectedCollectionId) || getCollectionById(GENERAL_COLLECTION_ID) || createDefaultCollection();
   let nextPosition = state.cards.length ? Math.max(...state.cards.map(c => Number(c.position) || 0)) : 0;
   const importedCards = chosen
     .map(item => {
@@ -1240,6 +1401,8 @@ async function importSelectedCards() {
         frontFormat: "html",
         backFormat: "html",
         labels: parseLabels(item.labelsText),
+        collectionId: selectedCollection.id,
+        collectionName: selectedCollection.name,
         status: item.status,
         position: nextPosition,
         createdAt: now,
@@ -1292,6 +1455,7 @@ function updateHeader() {
     eyebrowEl.textContent = "Create and manage";
     titleEl.textContent = "Cards";
     topbarActions.innerHTML = `
+      <button class="header-action-btn" data-action="open-collections-modal">Collections</button>
       <button class="header-action-btn" data-action="open-import">Import</button>
       ${state.cards.length ? `<button class="header-action-btn" data-action="toggle-card-selection-mode">${state.cardsSelectionMode ? "Done" : "Select"}</button>` : ""}
       ${state.cards.length ? `<button class="header-action-btn" data-action="open-filter-modal">Filter</button>` : ""}
@@ -1308,6 +1472,126 @@ function updateHeader() {
 
   backButton.hidden = state.route === "root" || !state.user;
   navItems.forEach(item => item.classList.toggle("active", item.dataset.tab === state.tab));
+}
+
+function createCollectionFromInput() {
+  const input = document.getElementById("collectionNameInput");
+  const rawName = input?.value?.trim() || "";
+  if (!rawName) {
+    showToast("Enter collection name");
+    return;
+  }
+  const exists = state.collections.some(collection => collection.name.toLowerCase() === rawName.toLowerCase());
+  if (exists) {
+    showToast("Collection already exists");
+    return;
+  }
+  const now = new Date().toISOString();
+  const nextPosition = Math.max(0, ...state.collections.map(collection => Number(collection.position) || 0)) + 1;
+  state.collections.push(normalizeCollection({
+    id: `collection-${cryptoSafeId()}`,
+    name: rawName,
+    createdAt: now,
+    updatedAt: now,
+    position: nextPosition
+  }, state.collections.length));
+  ensureCollectionsIntegrity();
+  persistCollectionsLocal();
+  if (input) input.value = "";
+  render();
+  showToast("Collection created");
+}
+
+async function renameCollection(collectionId) {
+  const collection = getCollectionById(collectionId);
+  if (!collection || collection.id === GENERAL_COLLECTION_ID) {
+    showToast("General cannot be renamed");
+    return;
+  }
+  const nextName = window.prompt("Rename collection", collection.name);
+  if (!nextName) return;
+  const trimmed = nextName.trim();
+  if (!trimmed) return;
+  const duplicate = state.collections.some(item => item.id !== collectionId && item.name.toLowerCase() === trimmed.toLowerCase());
+  if (duplicate) {
+    showToast("Collection already exists");
+    return;
+  }
+  const now = new Date().toISOString();
+  state.collections = state.collections.map(item => item.id === collectionId ? { ...item, name: trimmed, updatedAt: now } : item);
+  state.cards = reindexCards(state.cards.map((card, index) => card.collectionId === collectionId ? normalizeCard({ ...card, collectionName: trimmed, updatedAt: now }, index) : normalizeCard(card, index)));
+  ensureCollectionsIntegrity();
+  persistCollectionsLocal();
+  await persistCardsEverywhere();
+  render();
+  showToast("Collection renamed");
+}
+
+async function deleteCollection(collectionId) {
+  const collection = getCollectionById(collectionId);
+  if (!collection) return;
+  if (collection.id === GENERAL_COLLECTION_ID) {
+    showToast("General cannot be deleted");
+    return;
+  }
+  const ok = window.confirm(`Delete "${collection.name}"? Cards will move to General.`);
+  if (!ok) return;
+  const general = getCollectionById(GENERAL_COLLECTION_ID) || createDefaultCollection();
+  const now = new Date().toISOString();
+  state.cards = reindexCards(state.cards.map((card, index) => card.collectionId === collectionId
+    ? normalizeCard({ ...card, collectionId: general.id, collectionName: general.name, updatedAt: now }, index)
+    : normalizeCard(card, index)));
+  state.collections = state.collections.filter(item => item.id !== collectionId);
+  if (state.selectedCollectionId === collectionId) state.selectedCollectionId = GENERAL_COLLECTION_ID;
+  if (state.cardFilters.collectionId === collectionId) state.cardFilters.collectionId = "";
+  ensureCollectionsIntegrity();
+  persistCollectionsLocal();
+  persistUI();
+  await persistCardsEverywhere();
+  render();
+  showToast("Collection deleted");
+}
+
+function renderCollectionBadge(collectionId) {
+  const name = getCollectionNameById(collectionId);
+  return `<span class="collection-badge">${escapeHtml(name)}</span>`;
+}
+
+function renderCollectionsModal() {
+  if (!state.collectionsModalOpen) return "";
+  const collections = sortCollections(state.collections);
+  return `
+    <div class="filter-modal-backdrop" data-action="close-collections-modal">
+      <div class="filter-modal-card collections-modal-card" data-action="noop-collections-modal">
+        <div class="filter-modal-head">
+          <h2 class="panel-title">Collections</h2>
+          <button class="icon-button" data-action="close-collections-modal" aria-label="Close collections">×</button>
+        </div>
+
+        <div class="collection-create-row">
+          <input id="collectionNameInput" class="label-input" type="text" maxlength="80" placeholder="New collection name" />
+          <button class="secondary-button slim-button" data-action="create-collection">Create</button>
+        </div>
+
+        <div class="collections-list">
+          ${collections.map(collection => `
+            <div class="collection-row">
+              <div class="collection-row-main">
+                <div class="collection-row-name">${escapeHtml(collection.name)}</div>
+                <div class="muted">${countCardsForCollection(collection.id)} card${countCardsForCollection(collection.id) === 1 ? "" : "s"}</div>
+              </div>
+              <div class="collection-row-actions">
+                ${collection.id === GENERAL_COLLECTION_ID ? `<span class="collection-lock">Fixed</span>` : `
+                  <button class="icon-ghost" data-action="rename-collection" data-id="${collection.id}" aria-label="Rename collection">✎</button>
+                  <button class="icon-ghost" data-action="delete-collection" data-id="${collection.id}" aria-label="Delete collection">✕</button>
+                `}
+              </div>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function render() {
@@ -1352,16 +1636,44 @@ function renderAuthScreen() {
 }
 
 function renderHome() {
-  const activeCards = sortCardsByPosition(state.cards)
+  const selectedCollection = getCollectionById(state.selectedCollectionId) || getCollectionById(GENERAL_COLLECTION_ID) || createDefaultCollection();
+  const collectionCards = sortCardsByPosition(state.cards).filter(card => card.collectionId === selectedCollection.id);
+  const activeCards = collectionCards
     .filter(card => card.status === "Learning")
     .filter(card => !state.dismissedIds.has(card.id))
     .slice(0, 3);
+  const learningCount = collectionCards.filter(card => card.status === "Learning").length;
+
+  if (!collectionCards.length) {
+    appEl.innerHTML = `
+      <section class="panel empty-panel fade-in">
+        <div class="empty-box home-empty-box">
+          <div class="home-collection-picker">
+            <label class="field-label" for="homeCollectionSelect">Collection</label>
+            <select id="homeCollectionSelect" class="collection-select">${buildCollectionOptions(selectedCollection.id)}</select>
+            <div class="muted">0 learning • 0 total</div>
+          </div>
+          <h2>No cards in ${escapeHtml(selectedCollection.name)}</h2>
+          <div class="muted">Create cards or import a deck into this collection.</div>
+          <div class="empty-actions">
+            <button class="secondary-button" data-action="open-create">Create card</button>
+          </div>
+        </div>
+      </section>
+    `;
+    return;
+  }
 
   if (!activeCards.length) {
     appEl.innerHTML = `
       <section class="panel empty-panel fade-in">
-        <div class="empty-box">
-          <h2>All done!</h2>
+        <div class="empty-box home-empty-box">
+          <div class="home-collection-picker">
+            <label class="field-label" for="homeCollectionSelect">Collection</label>
+            <select id="homeCollectionSelect" class="collection-select">${buildCollectionOptions(selectedCollection.id)}</select>
+            <div class="muted">${learningCount} learning • ${collectionCards.length} total</div>
+          </div>
+          <h2>All done in ${escapeHtml(selectedCollection.name)}</h2>
           <div class="empty-actions">
             <button class="secondary-button" data-action="restart-home">Start learning</button>
           </div>
@@ -1373,6 +1685,13 @@ function renderHome() {
 
   appEl.innerHTML = `
     <section class="panel stack-wrap fade-in">
+      <div class="home-collection-bar">
+        <div>
+          <label class="field-label" for="homeCollectionSelect">Collection</label>
+          <select id="homeCollectionSelect" class="collection-select">${buildCollectionOptions(selectedCollection.id)}</select>
+        </div>
+        <div class="home-collection-stats muted">${learningCount} learning • ${collectionCards.length} total</div>
+      </div>
       <div class="stack-area">
         ${activeCards.map(card => `
           <div class="home-card-shell" data-id="${card.id}">
@@ -1382,14 +1701,14 @@ function renderHome() {
                 <div class="stamp-shell"></div>
                 <div class="stamp-content stamp-content-home">
                   <div class="face-text rich-content">${card.front}</div>
-                  <div class="home-labels-row">${renderLabels(card.labels)}</div>
+                  <div class="home-labels-row">${renderCollectionBadge(card.collectionId)}${renderLabels(card.labels)}</div>
                 </div>
               </article>
               <article class="card-face back home-face stamp-face" data-stamp-tone="learn-back" data-stamp-perf="12" data-stamp-padding="24">
                 <div class="stamp-shell"></div>
                 <div class="stamp-content stamp-content-home">
                   <div class="face-text rich-content">${card.back}</div>
-                  <div class="home-labels-row">${renderLabels(card.labels)}</div>
+                  <div class="home-labels-row">${renderCollectionBadge(card.collectionId)}${renderLabels(card.labels)}</div>
                 </div>
               </article>
             </div>
@@ -1402,7 +1721,6 @@ function renderHome() {
   applyStampFaces();
 }
 
-
 function getUniqueFilterLabels() {
   return [...new Set(state.cards.flatMap(card => Array.isArray(card.labels) ? card.labels : []))]
     .filter(Boolean)
@@ -1410,23 +1728,26 @@ function getUniqueFilterLabels() {
 }
 
 function hasActiveCardFilters() {
-  return state.cardFilters.statuses.length > 0 || state.cardFilters.labels.length > 0;
+  return state.cardFilters.statuses.length > 0 || state.cardFilters.labels.length > 0 || Boolean(state.cardFilters.collectionId);
 }
 
 function getFilteredCards(cards = sortCardsByPosition(state.cards)) {
   const statuses = state.cardFilters.statuses;
   const labels = state.cardFilters.labels;
+  const collectionId = state.cardFilters.collectionId;
   return cards.filter(card => {
+    const collectionMatch = !collectionId || card.collectionId === collectionId;
     const statusMatch = !statuses.length || statuses.includes(card.status);
     const cardLabels = Array.isArray(card.labels) ? card.labels : [];
     const labelMatch = !labels.length || labels.some(label => cardLabels.includes(label));
-    return statusMatch && labelMatch;
+    return collectionMatch && statusMatch && labelMatch;
   });
 }
 
 function renderFilterSummary(filteredCount, totalCount) {
   if (!hasActiveCardFilters()) return "";
   const parts = [];
+  if (state.cardFilters.collectionId) parts.push(`Collection(${escapeHtml(getCollectionNameById(state.cardFilters.collectionId))})`);
   if (state.cardFilters.statuses.length) parts.push(`Status(${state.cardFilters.statuses.length})`);
   if (state.cardFilters.labels.length) parts.push(`Labels(${state.cardFilters.labels.length})`);
   return `
@@ -1450,6 +1771,13 @@ function renderFilterModal() {
         </div>
 
         <form id="cardFilterForm" class="filter-form">
+          <div class="filter-section">
+            <div class="field-label">Collection</div>
+            <select id="cardFilterCollection" class="collection-select filter-collection-select">
+              ${buildCollectionOptions(state.cardFilters.collectionId, true)}
+            </select>
+          </div>
+
           <div class="filter-section">
             <div class="field-label">Status</div>
             <div class="filter-chip-group">
@@ -1505,130 +1833,12 @@ function applyCardFiltersFromForm() {
   if (!form) return;
   const statusValues = [...form.querySelectorAll('input[name="filter-status"]:checked')].map(input => input.value);
   const labelValues = [...form.querySelectorAll('input[name="filter-label"]:checked')].map(input => input.value);
-  state.cardFilters = { statuses: statusValues, labels: labelValues };
+  const collectionId = document.getElementById("cardFilterCollection")?.value || "";
+  state.cardFilters = { statuses: statusValues, labels: labelValues, collectionId };
   state.filterModalOpen = false;
   render();
 }
 
-
-
-function renderAiFab() {
-  return `
-    <button class="ai-fab" data-action="open-ai-modal" aria-label="Generate flashcards with AI">✨</button>
-  `;
-}
-
-function renderAiModal() {
-  if (!state.aiModalOpen) return "";
-  return `
-    <div class="ai-modal-backdrop" data-action="close-ai-modal">
-      <div class="ai-modal-card" data-action="noop-ai-modal">
-        <div class="ai-modal-head">
-          <h2 class="panel-title">Generate flashcards</h2>
-          <button class="icon-button" data-action="close-ai-modal" aria-label="Close AI modal">×</button>
-        </div>
-
-        <form id="aiGenerateForm" class="ai-form">
-          <div class="field">
-            <label class="field-label" for="aiTopicInput">Topic</label>
-            <input id="aiTopicInput" class="label-input" name="topic" maxlength="120" placeholder="e.g. Marketing basics" value="${escapeHtml(state.aiDraft.topic || "")}" />
-          </div>
-
-          <div class="ai-form-row">
-            <div class="field">
-              <label class="field-label" for="aiDifficultySelect">Difficulty</label>
-              <select id="aiDifficultySelect" class="import-select" name="difficulty">
-                ${["Easy", "Medium", "Hard"].map(level => `<option value="${level}" ${state.aiDraft.difficulty === level ? "selected" : ""}>${level}</option>`).join("")}
-              </select>
-            </div>
-            <div class="field">
-              <label class="field-label" for="aiCountInput">Number of cards</label>
-              <input id="aiCountInput" class="label-input" name="count" type="number" min="3" max="10" value="${Number(state.aiDraft.count) || 5}" />
-            </div>
-          </div>
-
-          <div class="note-text">Generated cards will open in the existing import preview so you can review before importing.</div>
-
-          <div class="ai-actions">
-            <button type="button" class="secondary-button slim-button" data-action="close-ai-modal">Cancel</button>
-            <button type="submit" class="primary-button slim-button" ${state.aiLoading ? "disabled" : ""}>${state.aiLoading ? "Generating…" : "Generate"}</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  `;
-}
-
-function syncAiDraftFromDom() {
-  if (!state.aiModalOpen) return;
-  const topic = document.getElementById("aiTopicInput")?.value ?? state.aiDraft.topic;
-  const difficulty = document.getElementById("aiDifficultySelect")?.value ?? state.aiDraft.difficulty;
-  const count = Number(document.getElementById("aiCountInput")?.value ?? state.aiDraft.count) || 5;
-  state.aiDraft = {
-    topic: String(topic || "").trim(),
-    difficulty: difficulty || "Easy",
-    count: Math.max(3, Math.min(10, count))
-  };
-}
-
-async function generateAiCards() {
-  syncAiDraftFromDom();
-  const topic = state.aiDraft.topic.trim();
-  if (!topic) {
-    showToast("Please enter a topic");
-    return;
-  }
-
-  state.aiLoading = true;
-  render();
-
-  try {
-    const response = await fetch("https://generatecards-msb5kcbkpq-uc.a.run.app", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      method: "POST",
-      body: JSON.stringify({
-        topic,
-        difficulty: state.aiDraft.difficulty,
-        count: state.aiDraft.count
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error("AI generation failed");
-    }
-
-    const cards = await response.json();
-    if (!Array.isArray(cards) || !cards.length) {
-      throw new Error("No cards generated");
-    }
-
-    const items = cards.map((item, index) => normalizeImportItem({
-      front: item.front,
-      back: item.back,
-      labels: Array.isArray(item.labels) ? [...item.labels, "ai-generated"] : ["ai-generated"],
-      status: item.status || "Learning"
-    }, index));
-
-    state.importDraft = {
-      rawText: JSON.stringify(cards, null, 2),
-      sourceName: "AI generated",
-      items
-    };
-    state.aiLoading = false;
-    state.aiModalOpen = false;
-    state.route = "import";
-    render();
-    showToast(`${items.length} AI card${items.length > 1 ? "s" : ""} ready to review`);
-  } catch (error) {
-    console.error(error);
-    state.aiLoading = false;
-    render();
-    showToast(error.message || "AI generation failed");
-  }
-}
 
 function renderCardsToolbar(cards, totalCount = cards.length) {
   const countLabel = hasActiveCardFilters()
@@ -1672,6 +1882,7 @@ function renderCards() {
           </div>
         </div>
       </section>
+      ${renderCollectionsModal()}
     `;
     return;
   }
@@ -1689,8 +1900,7 @@ function renderCards() {
         </div>
       </section>
       ${renderFilterModal()}
-      ${renderAiModal()}
-      ${renderAiFab()}
+      ${renderCollectionsModal()}
     `;
     return;
   }
@@ -1719,7 +1929,7 @@ function renderCards() {
                 <div class="list-title">${escapeHtml(preview(firstLine(card.front), 72))}</div>
               </div>
               <div class="list-preview">${escapeHtml(preview(card.front, 170))}</div>
-              <div class="label-row">${renderLabels(card.labels)}</div>
+              <div class="label-row">${renderCollectionBadge(card.collectionId)}${renderLabels(card.labels)}</div>
               <div class="list-status-row"><span class="status-chip ${statusClass(card.status)}">${card.status}</span></div>
             </button>
             ${state.cardsSelectionMode ? "" : `
@@ -1733,8 +1943,7 @@ function renderCards() {
       `).join("")}
     </section>
     ${renderFilterModal()}
-    ${renderAiModal()}
-    ${renderAiFab()}
+    ${renderCollectionsModal()}
   `;
 }
 
@@ -1754,6 +1963,13 @@ function renderCardForm(mode) {
   appEl.innerHTML = `
     <section class="panel form-panel fade-in">
       <form id="cardForm" novalidate>
+        <div class="field">
+          <label class="field-label" for="cardCollectionSelect">Collection</label>
+          <select id="cardCollectionSelect" class="collection-select">
+            ${buildCollectionOptions(isEdit ? card.collectionId : state.selectedCollectionId || GENERAL_COLLECTION_ID)}
+          </select>
+        </div>
+
         <div class="field labels-field">
           <label class="field-label" for="labelInput">Labels</label>
           <input id="labelInput" class="label-input" type="text" placeholder="Type a label and press Enter" maxlength="60" />
@@ -1923,6 +2139,7 @@ function renderMetrics() {
   const learning = state.cards.filter(card => card.status === "Learning").length;
   const learnt = state.cards.filter(card => card.status === "Learnt").length;
   const toLearn = state.cards.filter(card => card.status === "To learn").length;
+  const collectionsCount = state.collections.length;
   appEl.innerHTML = `
     <section class="panel fade-in">
       <div class="metrics-grid">
@@ -1943,11 +2160,15 @@ function renderMetrics() {
           <div class="metric-value">${learnt}</div>
         </div>
         <div class="metric-card">
+          <div class="muted">Collections</div>
+          <div class="metric-value">${collectionsCount}</div>
+        </div>
+        <div class="metric-card">
           <div class="muted">Signed in as</div>
           <div class="metric-value metric-user">${escapeHtml(state.user?.displayName || state.user?.email || "Google user")}</div>
         </div>
       </div>
-      <div class="version-note">Card Garden v54<br>@capyshibara</div>
+      <div class="version-note">${APP_VERSION}<br>@capyshibara</div>
       <div class="metrics-actions">
         <button class="secondary-button" data-action="export-json">Export JSON</button>
       </div>
@@ -1970,14 +2191,14 @@ function renderDetail() {
             <div class="stamp-shell"></div>
             <div class="stamp-content stamp-content-detail">
               <div class="face-text rich-content">${card.front}</div>
-              <div class="face-labels">${renderLabels(card.labels)}</div>
+              <div class="face-labels">${renderCollectionBadge(card.collectionId)}${renderLabels(card.labels)}</div>
             </div>
           </article>
           <article class="card-face back stamp-face" data-stamp-tone="detail-back" data-stamp-perf="12" data-stamp-padding="26">
             <div class="stamp-shell"></div>
             <div class="stamp-content stamp-content-detail">
               <div class="face-text rich-content">${card.back}</div>
-              <div class="face-labels">${renderLabels(card.labels)}</div>
+              <div class="face-labels">${renderCollectionBadge(card.collectionId)}${renderLabels(card.labels)}</div>
             </div>
           </article>
         </div>
@@ -2155,6 +2376,8 @@ async function initAuth() {
     } else {
       await stopCloud();
       state.cards = loadCards();
+      state.collections = loadCollections();
+      ensureCollectionsIntegrity();
       if (!sessionStorage.getItem(AUTH_REDIRECT_FLAG)) {
         setLoadingVisible(false);
       }
