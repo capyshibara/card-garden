@@ -1824,3 +1824,43 @@ h2 { font-size: calc(var(--fs-title) * 0.68); line-height: 0.98; font-weight: 70
     align-items: stretch;
   }
 }
+
+
+/* v56.1 cards-first layout fixes */
+.cards-root-panel {
+  padding: 16px;
+}
+.cards-root-note {
+  margin-bottom: 14px;
+}
+.collections-list-screen {
+  display: grid;
+  gap: 12px;
+}
+.collection-cards-screen {
+  padding: 16px 0 6px;
+}
+.collection-screen-meta {
+  padding: 0 18px 8px;
+}
+.compact-empty-panel {
+  min-height: 240px;
+}
+.compact-empty-panel .empty-box {
+  max-width: 380px;
+}
+.empty-filter-state {
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  text-align: center;
+}
+.collection-entry .icon-ghost,
+.collection-entry .collection-lock {
+  margin-top: 2px;
+}
+@media (max-width: 640px) {
+  .cards-root-panel { padding: 14px; }
+  .collection-cards-screen { padding-top: 14px; }
+}

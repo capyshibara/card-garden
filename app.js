@@ -850,6 +850,7 @@ appEl.addEventListener("click", async (e) => {
   if (type === "delete-collection") return deleteCollection(id);
   if (type === "open-collection") return openCollection(id);
   if (type === "open-create") return openCreate();
+  if (type === "open-import") return openImport();
   if (type === "sign-in-google") return signInWithGoogle();
   if (type === "sign-out") return signOutUser();
   if (type === "open-detail") return openDetail(id);
@@ -1501,8 +1502,8 @@ function updateHeader() {
   } else if (state.tab === "cards" && state.route === "collection") {
     const selectedCollection = getSelectedCollection();
     const collectionCards = getCardsForSelectedCollection();
-    eyebrowEl.textContent = selectedCollection.name;
-    titleEl.textContent = "Cards";
+    eyebrowEl.textContent = "Collection";
+    titleEl.textContent = selectedCollection.name;
     topbarActions.innerHTML = `
       <button class="header-action-btn" data-action="open-import">Import</button>
       ${collectionCards.length ? `<button class="header-action-btn" data-action="toggle-card-selection-mode">${state.cardsSelectionMode ? "Done" : "Select"}</button>` : ""}
@@ -1913,14 +1914,8 @@ function renderCardsToolbar(cards, totalCount = cards.length) {
 function renderCollectionsView() {
   const collections = sortCollections(state.collections);
   appEl.innerHTML = `
-    <section class="panel fade-in collection-screen">
-      <div class="collections-screen-head">
-        <div>
-          <h2 class="panel-title">Collections</h2>
-          <div class="muted">Pick a topic to manage its cards.</div>
-        </div>
-        <button class="secondary-button slim-button" data-action="create-collection-prompt">New collection</button>
-      </div>
+    <section class="panel fade-in collection-screen cards-root-panel">
+      <div class="cards-root-note muted">Pick a topic to manage its cards.</div>
       <div class="collections-list collections-list-screen">
         ${collections.map(collection => {
           const total = countCardsForCollection(collection.id);
@@ -1953,9 +1948,9 @@ function renderCollectionCards() {
 
   if (!allCards.length) {
     appEl.innerHTML = `
-      <section class="panel empty-panel fade-in collection-empty-panel">
+      <section class="panel empty-panel fade-in collection-empty-panel compact-empty-panel">
         <div class="empty-box">
-          <h2>${escapeHtml(selectedCollection.name)} is empty</h2>
+          <h2>No cards in ${escapeHtml(selectedCollection.name)}</h2>
           <div class="muted">Create a card or import a batch into this collection.</div>
           <div class="empty-actions">
             <button class="secondary-button" data-action="open-create">Create card</button>
@@ -1969,13 +1964,8 @@ function renderCollectionCards() {
 
   if (!cards.length) {
     appEl.innerHTML = `
-      <section class="panel fade-in">
-        <div class="collection-detail-head">
-          <div>
-            <div class="collection-detail-title">${escapeHtml(selectedCollection.name)}</div>
-            <div class="muted">${allCards.length} total cards</div>
-          </div>
-        </div>
+      <section class="panel fade-in collection-cards-screen">
+        <div class="collection-screen-meta muted">${allCards.length} total cards</div>
         ${renderCardsToolbar(cards, allCards.length)}
         <div class="empty-filter-state">
           <h2>No cards match this filter</h2>
@@ -1992,12 +1982,7 @@ function renderCollectionCards() {
 
   appEl.innerHTML = `
     <section class="panel fade-in collection-cards-screen">
-      <div class="collection-detail-head">
-        <div>
-          <div class="collection-detail-title">${escapeHtml(selectedCollection.name)}</div>
-          <div class="muted">${allCards.length} total cards</div>
-        </div>
-      </div>
+      <div class="collection-screen-meta muted">${allCards.length} total cards</div>
       ${renderCardsToolbar(cards, allCards.length)}
       ${cards.map((card, index) => `
         <div class="list-card ${state.cardsSelectionMode ? "is-select-mode" : ""}">
