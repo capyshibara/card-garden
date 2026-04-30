@@ -280,8 +280,6 @@ function sortCardsByPosition(cards = state.cards) {
 
 function createDefaultCollection() {
   const now = new Date().toISOString();
-  const collectionId = document.getElementById("cardCollectionSelect")?.value || state.selectedCollectionId || GENERAL_COLLECTION_ID;
-  const selectedCollection = getCollectionById(collectionId) || getCollectionById(GENERAL_COLLECTION_ID) || createDefaultCollection();
   return {
     id: GENERAL_COLLECTION_ID,
     name: "General",
