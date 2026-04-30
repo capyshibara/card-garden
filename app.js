@@ -3,12 +3,16 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRe
 import { getFirestore, collection, doc, getDocs, setDoc, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
 import { marked } from "https://cdn.jsdelivr.net/npm/marked/lib/marked.esm.js";
 
-const CARDS_KEY = "cg-v15-cards";
-const CARDS_BACKUP_KEY = "cg-v15-cards-backup";
-const UI_KEY = "cg-v15-ui";
+const CARDS_KEY_BASE = "cg-v57-cards";
+const CARDS_BACKUP_KEY_BASE = "cg-v57-cards-backup";
+const UI_KEY_BASE = "cg-v57-ui";
 const CLOUD_KEY = "cg-v15-cloud";
-const COLLECTIONS_KEY = "cg-v56-collections";
+const COLLECTIONS_KEY_BASE = "cg-v57-collections";
 const MIGRATED_USERS_KEY = "cg-v40-migrated-users";
+const LEGACY_CARDS_KEY = "cg-v15-cards";
+const LEGACY_CARDS_BACKUP_KEY = "cg-v15-cards-backup";
+const LEGACY_UI_KEY = "cg-v15-ui";
+const LEGACY_COLLECTIONS_KEY = "cg-v56-collections";
 const GENERAL_COLLECTION_ID = "general";
 
 const LEGACY_SOURCES = [
@@ -35,7 +39,7 @@ const FIREBASE_CONFIG = {
   appId: "1:69133538887:web:865e372186a94d268c0362"
 };
 
-const APP_VERSION = "Card Garden v56";
+const APP_VERSION = "Card Garden v57";
 const AUTH_REDIRECT_FLAG = "cg-auth-redirect-pending";
 
 marked.setOptions({ gfm: true, breaks: true });
@@ -56,6 +60,25 @@ function cryptoSafeId() {
 
 function safeParse(json) {
   try { return JSON.parse(json); } catch { return null; }
+}
+
+function getStorageScope(user = state?.user || null) {
+  return user && user.uid ? `user:${user.uid}` : "guest";
+}
+
+function scopedKey(base, user = state?.user || null) {
+  return `${base}::${getStorageScope(user)}`;
+}
+
+function readScopedLocal(base, fallbackKey = "", user = state?.user || null) {
+  const scoped = localStorage.getItem(scopedKey(base, user));
+  if (scoped !== null) return scoped;
+  if (!user && fallbackKey) return localStorage.getItem(fallbackKey);
+  return null;
+}
+
+function writeScopedLocal(base, value, user = state?.user || null) {
+  localStorage.setItem(scopedKey(base, user), value);
 }
 
 function escapeHtml(text) {
@@ -318,8 +341,8 @@ function sortCollections(collections = []) {
   });
 }
 
-function loadCollections() {
-  const saved = safeParse(localStorage.getItem(COLLECTIONS_KEY));
+function loadCollections(user = state?.user || null) {
+  const saved = safeParse(readScopedLocal(COLLECTIONS_KEY_BASE, LEGACY_COLLECTIONS_KEY, user));
   if (!Array.isArray(saved) || !saved.length) return [createDefaultCollection()];
   return sortCollections(saved.map((item, index) => normalizeCollection(item, index)));
 }
@@ -370,33 +393,35 @@ function normalizeUI(raw = {}) {
   };
 }
 
-function loadCards() {
-  const primary = safeParse(localStorage.getItem(CARDS_KEY));
+function loadCards(user = state?.user || null) {
+  const primary = safeParse(readScopedLocal(CARDS_KEY_BASE, LEGACY_CARDS_KEY, user));
   if (Array.isArray(primary)) return reindexCards(primary.map((c, i) => normalizeCard(c, i)));
 
-  const backup = safeParse(localStorage.getItem(CARDS_BACKUP_KEY));
+  const backup = safeParse(readScopedLocal(CARDS_BACKUP_KEY_BASE, LEGACY_CARDS_BACKUP_KEY, user));
   if (Array.isArray(backup)) {
     const restored = reindexCards(backup.map((c, i) => normalizeCard(c, i)));
-    localStorage.setItem(CARDS_KEY, JSON.stringify(restored));
+    writeScopedLocal(CARDS_KEY_BASE, JSON.stringify(restored), user);
     return restored;
   }
 
-  for (const key of LEGACY_SOURCES) {
-    const parsed = safeParse(localStorage.getItem(key));
-    if (!parsed) continue;
-    const list = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.cards) ? parsed.cards : null);
-    if (!list) continue;
-    const migrated = reindexCards(list.map((c, i) => normalizeCard(c, i)));
-    localStorage.setItem(CARDS_KEY, JSON.stringify(migrated));
-    localStorage.setItem(CARDS_BACKUP_KEY, JSON.stringify(migrated));
-    return migrated;
+  if (!user) {
+    for (const key of LEGACY_SOURCES) {
+      const parsed = safeParse(localStorage.getItem(key));
+      if (!parsed) continue;
+      const list = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.cards) ? parsed.cards : null);
+      if (!list) continue;
+      const migrated = reindexCards(list.map((c, i) => normalizeCard(c, i)));
+      writeScopedLocal(CARDS_KEY_BASE, JSON.stringify(migrated), user);
+      writeScopedLocal(CARDS_BACKUP_KEY_BASE, JSON.stringify(migrated), user);
+      return migrated;
+    }
   }
 
   return [];
 }
 
-function loadUI() {
-  return normalizeUI(safeParse(localStorage.getItem(UI_KEY)) || {});
+function loadUI(user = state?.user || null) {
+  return normalizeUI(safeParse(readScopedLocal(UI_KEY_BASE, LEGACY_UI_KEY, user)) || {});
 }
 
 function loadCloud() {
@@ -416,14 +441,14 @@ function emptyImportDraft() {
   return { rawText: "", sourceName: "", items: [] };
 }
 
-const uiState = loadUI();
+const uiState = loadUI(null);
 
 let state = {
   tab: uiState.tab,
   route: "root",
   selectedId: null,
-  cards: loadCards(),
-  collections: loadCollections(),
+  cards: loadCards(null),
+  collections: loadCollections(null),
   selectedCollectionId: uiState.selectedCollectionId,
   dismissedIds: new Set(uiState.dismissedIds),
   flippedIds: new Set(),
@@ -439,8 +464,8 @@ let state = {
   collectionsModalOpen: false
 };
 
-function persistCollectionsLocal() {
-  localStorage.setItem(COLLECTIONS_KEY, JSON.stringify(sortCollections(state.collections)));
+function persistCollectionsLocal(user = state.user) {
+  writeScopedLocal(COLLECTIONS_KEY_BASE, JSON.stringify(sortCollections(state.collections)), user);
 }
 
 function ensureCollectionsIntegrity() {
@@ -494,20 +519,20 @@ function ensureCollectionsIntegrity() {
 
 ensureCollectionsIntegrity();
 
-function persistCardsLocal() {
+function persistCardsLocal(user = state.user) {
   const cards = reindexCards(state.cards.map((card, index) => normalizeCard(card, index)));
   state.cards = cards;
   const serialized = JSON.stringify(cards);
-  localStorage.setItem(CARDS_KEY, serialized);
-  localStorage.setItem(CARDS_BACKUP_KEY, serialized);
+  writeScopedLocal(CARDS_KEY_BASE, serialized, user);
+  writeScopedLocal(CARDS_BACKUP_KEY_BASE, serialized, user);
 }
 
-function persistUI() {
-  localStorage.setItem(UI_KEY, JSON.stringify({
+function persistUI(user = state.user) {
+  writeScopedLocal(UI_KEY_BASE, JSON.stringify({
     tab: state.tab,
     dismissedIds: [...state.dismissedIds],
     selectedCollectionId: state.selectedCollectionId
-  }));
+  }), user);
 }
 
 function persistCloudConfig() {
@@ -590,21 +615,6 @@ async function writeAllCardsForUser(userId) {
   remoteCardIds = currentIds;
 }
 
-async function migrateLocalCardsIfNeeded(user) {
-  if (!user || !state.cards.length || state.migratedUserIds.has(user.uid)) return;
-  const cardsRef = cardsCollectionRef(user.uid);
-  const existing = await getDocs(cardsRef);
-  if (!existing.empty) {
-    remoteCardIds = new Set(existing.docs.map(item => item.id));
-    state.migratedUserIds.add(user.uid);
-    persistMigratedUsers();
-    return;
-  }
-  await writeAllCardsForUser(user.uid);
-  state.migratedUserIds.add(user.uid);
-  persistMigratedUsers();
-}
-
 async function startCloud(user) {
   await stopCloud();
   if (!user) return;
@@ -612,9 +622,6 @@ async function startCloud(user) {
   const cardsRef = cardsCollectionRef(user.uid);
   const first = await getDocs(cardsRef);
   remoteCardIds = new Set(first.docs.map(item => item.id));
-  if (first.empty) {
-    await migrateLocalCardsIfNeeded(user);
-  }
   unsubscribeCloud = onSnapshot(cardsRef, (snap) => {
     cloudReady = true;
     remoteCardIds = new Set(snap.docs.map(item => item.id));
@@ -659,6 +666,26 @@ const topbarActions = document.getElementById("topbarActions");
 function clearCardSelection() {
   state.cardsSelectionMode = false;
   state.selectedCardIds.clear();
+}
+
+function resetSessionState(user = null) {
+  state.user = user;
+  const ui = loadUI(user);
+  state.tab = ui.tab;
+  state.route = "root";
+  state.selectedId = null;
+  state.cards = loadCards(user);
+  state.collections = loadCollections(user);
+  state.selectedCollectionId = ui.selectedCollectionId;
+  state.dismissedIds = new Set(ui.dismissedIds);
+  state.flippedIds = new Set();
+  state.formLabels = [];
+  state.importDraft = emptyImportDraft();
+  state.cardFilters = { statuses: [], labels: [], collectionId: "" };
+  state.filterModalOpen = false;
+  state.collectionsModalOpen = false;
+  clearCardSelection();
+  ensureCollectionsIntegrity();
 }
 
 function openCollection(id) {
@@ -2449,25 +2476,18 @@ async function initAuth() {
   }
 
   onAuthStateChanged(firebaseAuth, async (user) => {
-    state.user = user;
     authReady = true;
-    state.route = "root";
-    state.selectedId = null;
-    clearCardSelection();
+    await stopCloud();
+    resetSessionState(user);
+    render();
 
     if (user) {
       sessionStorage.removeItem(AUTH_REDIRECT_FLAG);
       setLoadingVisible(true, "Loading your cards…");
       await startCloud(user);
       setLoadingVisible(false);
-    } else {
-      await stopCloud();
-      state.cards = loadCards();
-      state.collections = loadCollections();
-      ensureCollectionsIntegrity();
-      if (!sessionStorage.getItem(AUTH_REDIRECT_FLAG)) {
-        setLoadingVisible(false);
-      }
+    } else if (!sessionStorage.getItem(AUTH_REDIRECT_FLAG)) {
+      setLoadingVisible(false);
     }
     render();
   });
