@@ -7,7 +7,7 @@ const CARDS_KEY = "cg-v15-cards";
 const CARDS_BACKUP_KEY = "cg-v15-cards-backup";
 const UI_KEY = "cg-v15-ui";
 const CLOUD_KEY = "cg-v15-cloud";
-const COLLECTIONS_KEY = "cg-v55-collections";
+const COLLECTIONS_KEY = "cg-v56-collections";
 const MIGRATED_USERS_KEY = "cg-v40-migrated-users";
 const GENERAL_COLLECTION_ID = "general";
 
@@ -35,7 +35,7 @@ const FIREBASE_CONFIG = {
   appId: "1:69133538887:web:865e372186a94d268c0362"
 };
 
-const APP_VERSION = "Card Garden v55";
+const APP_VERSION = "Card Garden v56";
 const AUTH_REDIRECT_FLAG = "cg-auth-redirect-pending";
 
 marked.setOptions({ gfm: true, breaks: true });
@@ -287,6 +287,15 @@ function createDefaultCollection() {
     updatedAt: now,
     position: 0
   };
+}
+
+function getSelectedCollection() {
+  return getCollectionById(state.selectedCollectionId) || getCollectionById(GENERAL_COLLECTION_ID) || createDefaultCollection();
+}
+
+function getCardsForSelectedCollection() {
+  const selectedCollection = getSelectedCollection();
+  return sortCardsByPosition(state.cards).filter(card => card.collectionId === selectedCollection.id);
 }
 
 function normalizeCollection(raw = {}, index = 0) {
@@ -652,6 +661,47 @@ function clearCardSelection() {
   state.selectedCardIds.clear();
 }
 
+function openCollection(id) {
+  state.selectedCollectionId = id || GENERAL_COLLECTION_ID;
+  state.tab = "cards";
+  state.route = "collection";
+  state.selectedId = null;
+  clearCardSelection();
+  persistUI();
+  render();
+}
+
+function createCollectionPrompt() {
+  const rawName = window.prompt("New collection name");
+  if (!rawName) return;
+  const trimmed = rawName.trim();
+  if (!trimmed) {
+    showToast("Enter collection name");
+    return;
+  }
+  const duplicate = state.collections.some(item => item.name.toLowerCase() === trimmed.toLowerCase());
+  if (duplicate) {
+    showToast("Collection already exists");
+    return;
+  }
+  const now = new Date().toISOString();
+  const nextPosition = Math.max(0, ...state.collections.map(collection => Number(collection.position) || 0)) + 1;
+  const collection = normalizeCollection({
+    id: `collection-${cryptoSafeId()}`,
+    name: trimmed,
+    createdAt: now,
+    updatedAt: now,
+    position: nextPosition
+  }, state.collections.length);
+  state.collections.push(collection);
+  ensureCollectionsIntegrity();
+  persistCollectionsLocal();
+  state.selectedCollectionId = collection.id;
+  persistUI();
+  render();
+  showToast("Collection created");
+}
+
 function resetImportDraft() {
   state.importDraft = emptyImportDraft();
 }
@@ -669,9 +719,34 @@ document.querySelector(".bottom-nav").addEventListener("click", (e) => {
 });
 
 backButton.addEventListener("click", () => {
+  if (state.tab === "cards") {
+    if (state.route === "detail" || state.route === "edit" || state.route === "create") {
+      state.route = "collection";
+      state.selectedId = null;
+      clearCardSelection();
+      render();
+      return;
+    }
+    if (state.route === "import") {
+      resetImportDraft();
+      state.route = "root";
+      state.selectedId = null;
+      clearCardSelection();
+      render();
+      return;
+    }
+    if (state.route === "collection") {
+      state.route = "root";
+      state.selectedId = null;
+      clearCardSelection();
+      render();
+      return;
+    }
+  }
   if (state.route === "import") resetImportDraft();
   state.route = "root";
   state.selectedId = null;
+  clearCardSelection();
   render();
 });
 
@@ -684,26 +759,15 @@ topbarActions.addEventListener("click", async (e) => {
   if (type === "sign-out") return signOutUser();
   if (type === "reset-form") return resetForm();
   if (type === "open-import") return openImport();
+  if (type === "create-collection-prompt") return createCollectionPrompt();
   if (type === "open-filter-modal") {
     state.filterModalOpen = true;
     render();
     return;
   }
-  if (type === "open-collections-modal") {
-    state.collectionsModalOpen = true;
-    render();
-    return;
-  }
-  if (type === "sign-in-google") return signInWithGoogle();
-  if (type === "sign-out") return signOutUser();
   if (type === "toggle-card-selection-mode") {
     state.cardsSelectionMode = !state.cardsSelectionMode;
     if (!state.cardsSelectionMode) state.selectedCardIds.clear();
-    render();
-    return;
-  }
-  if (type === "cancel-card-selection") {
-    clearCardSelection();
     render();
     return;
   }
@@ -759,11 +823,6 @@ appEl.addEventListener("click", async (e) => {
     render();
     return;
   }
-  if (type === "open-collections-modal") {
-    state.collectionsModalOpen = true;
-    render();
-    return;
-  }
   if (type === "close-filter-modal") {
     state.filterModalOpen = false;
     render();
@@ -781,40 +840,15 @@ appEl.addEventListener("click", async (e) => {
       form.querySelectorAll('input[name="filter-status"], input[name="filter-label"]').forEach(input => {
         input.checked = false;
       });
-      const collectionSelect = document.getElementById("cardFilterCollection");
-      if (collectionSelect) collectionSelect.value = "";
       syncFilterDraftUi();
     }
     return;
   }
-  if (type === "noop-filter-modal") {
-    return;
-  }
-  if (type === "open-collections-modal") {
-    state.collectionsModalOpen = true;
-    render();
-    return;
-  }
-  if (type === "close-collections-modal") {
-    state.collectionsModalOpen = false;
-    render();
-    return;
-  }
-  if (type === "noop-collections-modal") {
-    return;
-  }
-  if (type === "create-collection") {
-    await createCollectionFromInput();
-    return;
-  }
-  if (type === "rename-collection") {
-    await renameCollection(action.dataset.id);
-    return;
-  }
-  if (type === "delete-collection") {
-    await deleteCollection(action.dataset.id);
-    return;
-  }
+  if (type === "noop-filter-modal") return;
+  if (type === "create-collection-prompt") return createCollectionPrompt();
+  if (type === "rename-collection") return renameCollection(id);
+  if (type === "delete-collection") return deleteCollection(id);
+  if (type === "open-collection") return openCollection(id);
   if (type === "open-create") return openCreate();
   if (type === "sign-in-google") return signInWithGoogle();
   if (type === "sign-out") return signOutUser();
@@ -910,10 +944,6 @@ appEl.addEventListener("change", async (e) => {
     renderHome();
     return;
   }
-  if (e.target.id === "cardFilterCollection") {
-    syncFilterDraftUi();
-    return;
-  }
 });
 
 appEl.addEventListener("keydown", (e) => {
@@ -941,6 +971,8 @@ appEl.addEventListener("submit", async (e) => {
   const back = normalizeEditorHtml(backEditor?.innerHTML || "");
   const frontText = stripHtml(front).trim();
   const backText = stripHtml(back).trim();
+  const collectionId = document.getElementById("cardCollectionSelect")?.value || state.selectedCollectionId || GENERAL_COLLECTION_ID;
+  const selectedCollection = getCollectionById(collectionId) || getCollectionById(GENERAL_COLLECTION_ID) || createDefaultCollection();
 
   if (!frontText || !backText) {
     showToast("Please fill both sides");
@@ -958,8 +990,10 @@ appEl.addEventListener("submit", async (e) => {
     card.collectionId = selectedCollection.id;
     card.collectionName = selectedCollection.name;
     card.updatedAt = now;
+    state.selectedCollectionId = selectedCollection.id;
     await persistCardsEverywhere();
     state.route = "detail";
+    persistUI();
     render();
     showToast("Card updated");
     return;
@@ -982,12 +1016,14 @@ appEl.addEventListener("submit", async (e) => {
   }, nextPosition - 1);
 
   state.cards.push(card);
+  state.selectedCollectionId = selectedCollection.id;
   await persistCardsEverywhere();
   state.formLabels = [];
-  state.route = "root";
+  state.route = "collection";
   state.tab = "cards";
   state.selectedId = null;
   clearCardSelection();
+  persistUI();
   render();
   showToast("Card created");
 });
@@ -1010,19 +1046,24 @@ function openImport() {
 }
 
 function openDetail(id) {
+  const card = state.cards.find(item => item.id === id);
+  if (card?.collectionId) state.selectedCollectionId = card.collectionId;
   clearCardSelection();
   state.route = "detail";
   state.selectedId = id;
+  persistUI();
   render();
 }
 
 function openEdit(id) {
   const card = state.cards.find(item => item.id === id);
   if (!card) return;
+  if (card.collectionId) state.selectedCollectionId = card.collectionId;
   clearCardSelection();
   state.route = "edit";
   state.selectedId = id;
   state.formLabels = [...card.labels];
+  persistUI();
   render();
 }
 
@@ -1092,14 +1133,19 @@ async function setStatus(id, status) {
 }
 
 async function moveCard(id, direction) {
-  const ordered = sortCardsByPosition(state.cards);
+  const target = state.cards.find(card => card.id === id);
+  if (!target) return;
+  const ordered = sortCardsByPosition(state.cards).filter(card => card.collectionId === target.collectionId);
   const index = ordered.findIndex(card => card.id === id);
   const swapIndex = index + direction;
   if (index < 0 || swapIndex < 0 || swapIndex >= ordered.length) return;
   const currentPosition = ordered[index].position;
   ordered[index].position = ordered[swapIndex].position;
   ordered[swapIndex].position = currentPosition;
-  state.cards = reindexCards(ordered);
+  state.cards = reindexCards(state.cards.map(card => {
+    const replacement = ordered.find(item => item.id === card.id);
+    return replacement ? { ...card, position: replacement.position } : card;
+  }));
   await persistCardsEverywhere();
   render();
 }
@@ -1124,7 +1170,7 @@ function deleteCardsByIds(ids = []) {
   });
   if (state.selectedId && idSet.has(state.selectedId)) {
     state.selectedId = null;
-    state.route = "root";
+    state.route = state.tab === "cards" ? "collection" : "root";
   }
 }
 
@@ -1137,7 +1183,7 @@ function toggleCardSelection(id, forcedValue = null) {
 
 function selectAllCards() {
   state.cardsSelectionMode = true;
-  state.selectedCardIds = new Set(getFilteredCards(sortCardsByPosition(state.cards)).map(card => card.id));
+  state.selectedCardIds = new Set(getFilteredCards(getCardsForSelectedCollection()).map(card => card.id));
 }
 
 async function deleteSelectedCards() {
@@ -1383,8 +1429,9 @@ async function importSelectedCards() {
     return;
   }
 
+  const selectedCollectionId = document.getElementById("importCollectionSelect")?.value || state.selectedCollectionId || GENERAL_COLLECTION_ID;
+  const selectedCollection = getCollectionById(selectedCollectionId) || getCollectionById(GENERAL_COLLECTION_ID) || createDefaultCollection();
   const now = new Date().toISOString();
-  const selectedCollection = getCollectionById(state.selectedCollectionId) || getCollectionById(GENERAL_COLLECTION_ID) || createDefaultCollection();
   let nextPosition = state.cards.length ? Math.max(...state.cards.map(c => Number(c.position) || 0)) : 0;
   const importedCards = chosen
     .map(item => {
@@ -1399,9 +1446,9 @@ async function importSelectedCards() {
         frontFormat: "html",
         backFormat: "html",
         labels: parseLabels(item.labelsText),
+        status: item.status,
         collectionId: selectedCollection.id,
         collectionName: selectedCollection.name,
-        status: item.status,
         position: nextPosition,
         createdAt: now,
         updatedAt: now
@@ -1415,10 +1462,12 @@ async function importSelectedCards() {
   }
 
   state.cards.push(...importedCards);
+  state.selectedCollectionId = selectedCollection.id;
   await persistCardsEverywhere();
   resetImportDraft();
-  state.route = "root";
+  state.route = "collection";
   state.tab = "cards";
+  persistUI();
   render();
   showToast(`${importedCards.length} card${importedCards.length > 1 ? "s" : ""} imported`);
 }
@@ -1433,31 +1482,39 @@ function updateHeader() {
     eyebrowEl.textContent = "Private study library";
     titleEl.textContent = "Sign in";
   } else if (state.route === "detail") {
-    eyebrowEl.textContent = "Review and update";
+    eyebrowEl.textContent = getSelectedCollection().name;
     titleEl.textContent = "Card details";
   } else if (state.route === "edit") {
-    eyebrowEl.textContent = "Create and manage";
+    eyebrowEl.textContent = getSelectedCollection().name;
     titleEl.textContent = "Edit card";
     topbarActions.innerHTML = `<button class="plus-button" data-action="reset-form" aria-label="Clear form">+</button>`;
   } else if (state.route === "import") {
-    eyebrowEl.textContent = "Paste or load JSON";
+    eyebrowEl.textContent = "Choose a collection";
     titleEl.textContent = "Import cards";
   } else if (state.tab === "home") {
     eyebrowEl.textContent = "A calm study space";
     titleEl.textContent = "Learn";
   } else if (state.tab === "cards" && state.route === "create") {
-    eyebrowEl.textContent = "Create and manage";
+    eyebrowEl.textContent = getSelectedCollection().name;
     titleEl.textContent = "Create a card";
     topbarActions.innerHTML = `<button class="plus-button" data-action="reset-form" aria-label="Clear form">+</button>`;
-  } else if (state.tab === "cards") {
-    eyebrowEl.textContent = "Create and manage";
+  } else if (state.tab === "cards" && state.route === "collection") {
+    const selectedCollection = getSelectedCollection();
+    const collectionCards = getCardsForSelectedCollection();
+    eyebrowEl.textContent = selectedCollection.name;
     titleEl.textContent = "Cards";
     topbarActions.innerHTML = `
-      <button class="header-action-btn" data-action="open-collections-modal">Collections</button>
       <button class="header-action-btn" data-action="open-import">Import</button>
-      ${state.cards.length ? `<button class="header-action-btn" data-action="toggle-card-selection-mode">${state.cardsSelectionMode ? "Done" : "Select"}</button>` : ""}
-      ${state.cards.length ? `<button class="header-action-btn" data-action="open-filter-modal">Filter</button>` : ""}
+      ${collectionCards.length ? `<button class="header-action-btn" data-action="toggle-card-selection-mode">${state.cardsSelectionMode ? "Done" : "Select"}</button>` : ""}
+      ${collectionCards.length ? `<button class="header-action-btn" data-action="open-filter-modal">Filter</button>` : ""}
       <button class="plus-button" data-action="open-create" aria-label="Create a card">+</button>
+    `;
+  } else if (state.tab === "cards") {
+    eyebrowEl.textContent = "Choose a topic";
+    titleEl.textContent = "Collections";
+    topbarActions.innerHTML = `
+      <button class="header-action-btn" data-action="open-import">Import</button>
+      <button class="header-action-btn" data-action="create-collection-prompt">New</button>
     `;
   } else {
     eyebrowEl.textContent = "Your card health";
@@ -1596,8 +1653,9 @@ function render() {
   updateHeader();
   if (!authReady) return renderAuthLoading();
   if (!state.user) return renderAuthScreen();
+  ensureCollectionsIntegrity();
   if (state.route === "detail" && state.selectedId && !state.cards.some(card => card.id === state.selectedId)) {
-    state.route = "root";
+    state.route = "collection";
     state.selectedId = null;
   }
   if (state.tab === "home") return renderHome();
@@ -1720,32 +1778,29 @@ function renderHome() {
 }
 
 function getUniqueFilterLabels() {
-  return [...new Set(state.cards.flatMap(card => Array.isArray(card.labels) ? card.labels : []))]
+  return [...new Set(getCardsForSelectedCollection().flatMap(card => Array.isArray(card.labels) ? card.labels : []))]
     .filter(Boolean)
     .sort((a, b) => a.localeCompare(b));
 }
 
 function hasActiveCardFilters() {
-  return state.cardFilters.statuses.length > 0 || state.cardFilters.labels.length > 0 || Boolean(state.cardFilters.collectionId);
+  return state.cardFilters.statuses.length > 0 || state.cardFilters.labels.length > 0;
 }
 
-function getFilteredCards(cards = sortCardsByPosition(state.cards)) {
+function getFilteredCards(cards = getCardsForSelectedCollection()) {
   const statuses = state.cardFilters.statuses;
   const labels = state.cardFilters.labels;
-  const collectionId = state.cardFilters.collectionId;
   return cards.filter(card => {
-    const collectionMatch = !collectionId || card.collectionId === collectionId;
     const statusMatch = !statuses.length || statuses.includes(card.status);
     const cardLabels = Array.isArray(card.labels) ? card.labels : [];
     const labelMatch = !labels.length || labels.some(label => cardLabels.includes(label));
-    return collectionMatch && statusMatch && labelMatch;
+    return statusMatch && labelMatch;
   });
 }
 
 function renderFilterSummary(filteredCount, totalCount) {
   if (!hasActiveCardFilters()) return "";
   const parts = [];
-  if (state.cardFilters.collectionId) parts.push(`Collection(${escapeHtml(getCollectionNameById(state.cardFilters.collectionId))})`);
   if (state.cardFilters.statuses.length) parts.push(`Status(${state.cardFilters.statuses.length})`);
   if (state.cardFilters.labels.length) parts.push(`Labels(${state.cardFilters.labels.length})`);
   return `
@@ -1769,13 +1824,6 @@ function renderFilterModal() {
         </div>
 
         <form id="cardFilterForm" class="filter-form">
-          <div class="filter-section">
-            <div class="field-label">Collection</div>
-            <select id="cardFilterCollection" class="collection-select filter-collection-select">
-              ${buildCollectionOptions(state.cardFilters.collectionId, true)}
-            </select>
-          </div>
-
           <div class="filter-section">
             <div class="field-label">Status</div>
             <div class="filter-chip-group">
@@ -1831,17 +1879,14 @@ function applyCardFiltersFromForm() {
   if (!form) return;
   const statusValues = [...form.querySelectorAll('input[name="filter-status"]:checked')].map(input => input.value);
   const labelValues = [...form.querySelectorAll('input[name="filter-label"]:checked')].map(input => input.value);
-  const collectionId = document.getElementById("cardFilterCollection")?.value || "";
-  state.cardFilters = { statuses: statusValues, labels: labelValues, collectionId };
+  state.cardFilters = { statuses: statusValues, labels: labelValues, collectionId: "" };
   state.filterModalOpen = false;
   render();
 }
 
 
 function renderCardsToolbar(cards, totalCount = cards.length) {
-  const countLabel = hasActiveCardFilters()
-    ? `${cards.length} card${cards.length !== 1 ? "s" : ""}`
-    : `${cards.length} card${cards.length !== 1 ? "s" : ""}`;
+  const countLabel = `${cards.length} card${cards.length !== 1 ? "s" : ""}`;
 
   if (!state.cardsSelectionMode) {
     return `
@@ -1865,22 +1910,59 @@ function renderCardsToolbar(cards, totalCount = cards.length) {
   `;
 }
 
-function renderCards() {
-  const allCards = sortCardsByPosition(state.cards);
+function renderCollectionsView() {
+  const collections = sortCollections(state.collections);
+  appEl.innerHTML = `
+    <section class="panel fade-in collection-screen">
+      <div class="collections-screen-head">
+        <div>
+          <h2 class="panel-title">Collections</h2>
+          <div class="muted">Pick a topic to manage its cards.</div>
+        </div>
+        <button class="secondary-button slim-button" data-action="create-collection-prompt">New collection</button>
+      </div>
+      <div class="collections-list collections-list-screen">
+        ${collections.map(collection => {
+          const total = countCardsForCollection(collection.id);
+          const learning = state.cards.filter(card => card.collectionId === collection.id && card.status === "Learning").length;
+          const toLearn = state.cards.filter(card => card.collectionId === collection.id && card.status === "To learn").length;
+          return `
+            <div class="collection-row collection-entry ${collection.id === state.selectedCollectionId ? "is-active" : ""}">
+              <button class="collection-entry-main" data-action="open-collection" data-id="${collection.id}">
+                <div class="collection-row-name">${escapeHtml(collection.name)}</div>
+                <div class="collection-entry-stats muted">${total} total • ${learning} learning • ${toLearn} to learn</div>
+              </button>
+              <div class="collection-row-actions">
+                ${collection.id === GENERAL_COLLECTION_ID ? `<span class="collection-lock">Fixed</span>` : `
+                  <button class="icon-ghost" data-action="rename-collection" data-id="${collection.id}" aria-label="Rename collection">✎</button>
+                  <button class="icon-ghost" data-action="delete-collection" data-id="${collection.id}" aria-label="Delete collection">✕</button>
+                `}
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderCollectionCards() {
+  const selectedCollection = getSelectedCollection();
+  const allCards = getCardsForSelectedCollection();
   const cards = getFilteredCards(allCards);
 
   if (!allCards.length) {
     appEl.innerHTML = `
-      <section class="panel empty-panel fade-in">
+      <section class="panel empty-panel fade-in collection-empty-panel">
         <div class="empty-box">
-          <h2>Let’s create a new card</h2>
-          <div class="muted">Use Import above or create one manually.</div>
+          <h2>${escapeHtml(selectedCollection.name)} is empty</h2>
+          <div class="muted">Create a card or import a batch into this collection.</div>
           <div class="empty-actions">
-            <button class="center-plus" data-action="open-create" aria-label="Create a card">+</button>
+            <button class="secondary-button" data-action="open-create">Create card</button>
+            <button class="secondary-button" data-action="open-import">Import JSON</button>
           </div>
         </div>
       </section>
-      ${renderCollectionsModal()}
     `;
     return;
   }
@@ -1888,23 +1970,34 @@ function renderCards() {
   if (!cards.length) {
     appEl.innerHTML = `
       <section class="panel fade-in">
+        <div class="collection-detail-head">
+          <div>
+            <div class="collection-detail-title">${escapeHtml(selectedCollection.name)}</div>
+            <div class="muted">${allCards.length} total cards</div>
+          </div>
+        </div>
         ${renderCardsToolbar(cards, allCards.length)}
         <div class="empty-filter-state">
           <h2>No cards match this filter</h2>
-          <div class="muted">Try a different combination of status and labels.</div>
+          <div class="muted">Try a different combination of status and labels in ${escapeHtml(selectedCollection.name)}.</div>
           <div class="empty-actions">
             <button class="secondary-button" data-action="clear-card-filters">Clear filters</button>
           </div>
         </div>
       </section>
       ${renderFilterModal()}
-      ${renderCollectionsModal()}
     `;
     return;
   }
 
   appEl.innerHTML = `
-    <section class="panel fade-in">
+    <section class="panel fade-in collection-cards-screen">
+      <div class="collection-detail-head">
+        <div>
+          <div class="collection-detail-title">${escapeHtml(selectedCollection.name)}</div>
+          <div class="muted">${allCards.length} total cards</div>
+        </div>
+      </div>
       ${renderCardsToolbar(cards, allCards.length)}
       ${cards.map((card, index) => `
         <div class="list-card ${state.cardsSelectionMode ? "is-select-mode" : ""}">
@@ -1927,7 +2020,7 @@ function renderCards() {
                 <div class="list-title">${escapeHtml(preview(firstLine(card.front), 72))}</div>
               </div>
               <div class="list-preview">${escapeHtml(preview(card.front, 170))}</div>
-              <div class="label-row">${renderCollectionBadge(card.collectionId)}${renderLabels(card.labels)}</div>
+              <div class="label-row">${renderLabels(card.labels)}</div>
               <div class="list-status-row"><span class="status-chip ${statusClass(card.status)}">${card.status}</span></div>
             </button>
             ${state.cardsSelectionMode ? "" : `
@@ -1941,8 +2034,12 @@ function renderCards() {
       `).join("")}
     </section>
     ${renderFilterModal()}
-    ${renderCollectionsModal()}
   `;
+}
+
+function renderCards() {
+  if (state.route === "collection") return renderCollectionCards();
+  return renderCollectionsView();
 }
 
 function renderCardForm(mode) {
@@ -2096,8 +2193,15 @@ function renderImportItem(item, index) {
 
 function renderImport() {
   const selectedCount = state.importDraft.items.filter(item => item.selected).length;
+  const selectedCollection = getSelectedCollection();
   appEl.innerHTML = `
     <section class="panel import-panel fade-in">
+      <div class="field">
+        <label class="field-label" for="importCollectionSelect">Import into collection</label>
+        <select id="importCollectionSelect" class="collection-select">
+          ${buildCollectionOptions(selectedCollection.id)}
+        </select>
+      </div>
       <div class="field">
         <label class="field-label" for="importJsonInput">Paste JSON</label>
         <textarea class="import-json-input" id="importJsonInput" placeholder='Paste an array of cards or an object with a "cards" array'>${escapeHtml(state.importDraft.rawText)}</textarea>
